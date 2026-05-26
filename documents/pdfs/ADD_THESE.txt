@@ -1,12 +1,11 @@
-Three codes are already processed and built in. Drop the remaining PDFs here,
-then run:  python ingest.py   (then redeploy / restart).
+All four labour Codes and their Central Rules are now processed and built in.
 
-Still needed:
-  - Occupational Safety, Health & Working Conditions Code, 2020   (code)
-  - Code on Wages (Central) Rules, 2020                            (rules)
-  - Industrial Relations (Central) Rules, 2020                     (rules)
-  - Code on Social Security (Central) Rules, 2020                  (rules)
-  - OSH & WC (Central) Rules, 2020                                 (rules)
+To replace or update a document later:
+  1. Drop the new PDF into this folder (use a filename containing the
+     relevant keyword: wage / industrial / social / osh, and "rule"
+     for the Central Rules variants).
+  2. Run:  python ingest.py
+  3. Commit the new .pdf and the regenerated .txt in ../processed/.
 
-Filenames don't need to be exact — keywords (wage / industrial / social / osh +
-"rule" for rules files) are matched automatically.
+Filenames don't need to be exact — keywords (wage / industrial / social
+/ osh + "rule" for rules files) are matched automatically by ingest.py.

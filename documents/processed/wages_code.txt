@@ -405,8 +405,7 @@ day in excess of the number of hours constituting a normal working day, the empl
 pay him for every hour or for part of an hour so worked in excess, at the overtime rate which
 shall not be less than twice the normal rate of wages.
 CHAPTER III
-P
-AYMENT OF W AGES
+PAYMENT OF W AGES
 15. All wages shall be paid in current coin or currency notes or by cheque or by
 crediting the wages in the bank account of the employee or by the electronic mode:
 Fixing hours
@@ -622,8 +621,7 @@ rate of interest payable thereon, shall be such as may be prescribed.
 unless the appropriate Government, by notification, applies such provisions to the
 Government establishments specified in the said notification.
 CHAPTER IV
-P
-AYMENT OF BONUS
+PAYMENT OF BONUS
 26. (1) There shall be paid to every employee, drawing wages not exceeding such
 amount per mensem, as determined by notification, by the appropriate Government, by his
 employer, who has put in at least thirty days work in an accounting year, an annual minimum
@@ -632,7 +630,7 @@ employee or one hundred rupees, whichever is higher whether or not the employer 
 allocable surplus during the previous accounting year.
 (2) For the purpose of calculation of the bonus where the wages of the employee
 exceeds such amount per mensem, as determined by notification by the appropriate
-Government, the bonus payable to such employee under sub-sections ( 1) and (3) shall be
+Government, the bonus payable to such employee under sub-sections (1) and (3) shall be
 Deductions
 for services
 rendered.
@@ -853,7 +851,7 @@ by the Central Government.
 (2) Where for any accounting year, there is no available surplus or the allocable
 surplus in respect of that year falls short of the amount of minimum bonus payable to the
 employees in the establishment under section 26, and there is no amount or sufficient
-amount carried forward and set on under sub-section ( 1) which could be utilised for the
+amount carried forward and set on under sub-section (1) which could be utilised for the
 purpose of payment of the minimum bonus, then, such minimum amount or the deficiency,
 as the case may be, shall be carried forward for being set off in the succeeding accounting
 year and so on up to and inclusive of the fourth accounting year in such manner as may be
@@ -1037,8 +1035,7 @@ and the State Advisory Board referred to in sub-section (4) including that of th
 and sub-committees constituted by the State Advisory Board, shall be such as may be
 prescribed.
 CHAPTER VI
-P
-AYMENT OF DUES, CLAIMS AND AUDIT
+PAYMENT OF DUES, CLAIMS AND AUDIT
 43. Every employer shall pay all amounts required to be paid under this Code to every
 employee employed by him:
 Provided that where such employer fails to make such payment in accordance with
@@ -1217,7 +1214,7 @@ appeal and endeavour shall be made to dispose of the appeal within a period of t
 months.
 (4) The outstanding dues under the orders of the appellate authority shall be recovered
 by the authority referred to in section 45, by issuing the certificate of recovery in the manner
-specified in sub-section ( 3) of that section.
+specified in sub-section (3) of that section.
 50. (1) Every employer of an establishment to which this Code applies shall maintain
 a register containing the details with regard to persons employed, muster roll, wages and
 such other details in such manner as may be prescribed.
@@ -1309,7 +1306,7 @@ power to summon and enforce attendance of any person acquainted with the facts a
 circumstances of the case to give evidence or to produce any document, which in the
 opinion of such officer, may be useful for or relevant to the subject matter of the enquiry and
 if, on such enquiry, he is satisfied that the person has committed any offence under the
-provisions referred to in sub-section ( 1), he may impose such penalty as he thinks fit in
+provisions referred to in sub-section (1), he may impose such penalty as he thinks fit in
 accordance with such provisions.
 54. (1) Any employer who—
 (a) pays to any employee less than the amount due to such employee under the

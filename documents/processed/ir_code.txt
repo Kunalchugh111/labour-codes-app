@@ -342,7 +342,7 @@ payable to him, shall be deemed to form part of the wages of such employee;
 clause (aa) of section 2 of the Apprentices Act, 1961) employed in any industry to do
 any manual, unskilled, skilled, technical, operational, clerical or supervisory work for
 hire or reward, whether the terms of employment be express or implied, and includes
-working journalists as defined in clause ( f) of section 2 of the Working Journalists
+working journalists as defined in clause (f) of section 2 of the Working Journalists
 and other Newspaper Employees (Conditions of Service) and Miscellaneous
 52 of 1961.
 8 THE GAZETTE OF INDIA EXTRAORDINARY [P ART II—
@@ -367,8 +367,7 @@ Provided that for the purposes of Chapter III, "worker"—
 (b) includes the worker as defined in clause (m) of section 2 of the Unorganised
 Workers' Social Security Act, 2008.
 CHAPTER II
-B
-I-PARTITE FORUMS
+BI-PARTITE FORUMS
 3. (1) In the case of any industrial establishment in which one hundred or more
 workers are employed or have been employed on any day in the preceding twelve months,
 the appropriate Government may by general or special order require the employer to
@@ -436,13 +435,12 @@ adjudication of the dispute referred to therein after the expiry of forty-five d
 date he has made the application to the conciliation officer of the appropriate Government
 for conciliation of the dispute, and on receipt of such application the Tribunal shall have
 powers and jurisdiction to adjudicate upon the dispute, as the Tribunal has in respect of the
-application filed under sub-section ( 6) of section 53.
+application filed under sub-section (6) of section 53.
 (11) The application referred to in sub-section ( 10) shall be made to the Tribunal
 before the expiry of two years from the date of discharge, dismissal, retrenchment or
-otherwise termination of service as specified in sub-section ( 9).
+otherwise termination of service as specified in sub-section (9).
 CHAPTER III
-T
-RADE UNIONS
+TRADE UNIONS
 5. (1) The State Government may, by notification, appoint a person to be the Registrar
 of Trade Unions, and other persons as Additional Registrar of Trade Unions, Joint Registrar
 of Trade Unions and Deputy Registrar of Trade Unions, who shall exercise such powers
@@ -662,7 +660,7 @@ in an industrial establishment, and no such Trade Union has fifty-one per cent. 
 workers on the muster roll of that industrial establishment, verified in such manner as may
 be prescribed, supporting that Trade union, then, there shall be constituted by the employer
 of the industrial establishment, a negotiating council for negotiation on the matters referred
-to in sub-section ( 1), consisting of the representatives of such registered Trade Unions
+to in sub-section (1), consisting of the representatives of such registered Trade Unions
 which have the support of not less than twenty per cent. of the total workers on the muster
 roll of that industrial establishment so verified and such representation shall be of one
 representative for each twenty per cent. and for the remainder after calculating the
@@ -906,8 +904,7 @@ Union in such manner and for such purpose, as may be prescribed, and if any disp
 in relation to such recognition, it shall be decided by such authority in such manner as may
 be prescribed by the State Government.
 CHAPTER IV
-S
-TANDING ORDERS
+STANDING ORDERS
 28. (1) The provisions of this Chapter shall apply to every industrial establishment
 wherein three hundred or more than three hundred workers, are employed, or were employed
 on any day of the preceding twelve months.
@@ -925,7 +922,7 @@ conditions of service and other matters incidental thereto or connected therewit
 commencing on the date on which this section becomes applicable to an industrial
 establishment and ending with the date on which the standing orders as finally certified
 under this Code come into operation under section 33 in that establishment, the model
-standing order referred to in sub-section ( 1) shall be deemed to be adopted in that
+standing order referred to in sub-section (1) shall be deemed to be adopted in that
 establishment and the provisions of sub-section ( 2) of section 33 and section 35 shall
 apply to such model standing orders as they apply to the standing orders so certified.
 30. (1) The employer shall prepare draft standing orders, within a period of six months
@@ -1019,7 +1016,7 @@ orders relating to an industrial establishment or undertaking existing on the da
 SEC. 1] THE GAZETTE OF INDIA EXTRAORDINARY 19
 commencement of the relevant provisions of this Code, shall, in so far as is not inconsistent
 with the provisions of this Code or rules made thereunder, continue and be deemed to be
-the standing orders certified under sub-section ( 8) and accordingly the provisions of this
+the standing orders certified under sub-section (8) and accordingly the provisions of this
 Chapter shall apply thereon.
 31. (1) Every certifying officer and the appellate authority referred to in
 section 32 shall have all the powers of a civil court for the purposes of receiving evidence,
@@ -1124,8 +1121,7 @@ such worker is not directly attributable to the conduct of such worker.
 unconditionally, any industrial establishment or class of industrial establishments from all
 or any of the provisions of this Chapter.
 CHAPTER V
-N
-OTICE OF CHANGE
+NOTICE OF CHANGE
 40. No employer, who proposes to effect any change in the conditions of service
 applicable to any worker in respect of any matter specified in the Third Schedule, shall
 effect such change,—
@@ -1171,8 +1167,7 @@ that the provisions of the said section shall not apply or shall apply, subject 
 as may be specified in the notification, to that class of industrial establishments or to that
 class of workers employed in any industrial establishment.
 CHAPTER VI
-V
-OLUNTARY REFERENCE OF DISPUTES TO ARBITRATION
+VOLUNTARY REFERENCE OF DISPUTES TO ARBITRATION
 42. (1) Where any industrial dispute exists or is apprehended and the employer and
 the workers agree to refer the dispute to arbitration, they may, by a written agreement,
 refer the dispute to arbitration, and the reference shall be to such person or persons as an
@@ -1224,8 +1219,7 @@ existence on the date of the reference.
 (8) Nothing in the Arbitration and Conciliation Act, 1996, shall apply to arbitrations
 under this section.
 CHAPTER VII
-M
-ECHANISM FOR RESOLUTION OF INDUSTRIAL DISPUTES
+MECHANISM FOR RESOLUTION OF INDUSTRIAL DISPUTES
 43. (1) The appropriate Government may, by notification, appoint such number of
 persons, as it thinks fit to be conciliation officers, charged with the duty of mediating in
 and promoting the settlement of industrial disputes.
@@ -1554,20 +1548,20 @@ become enforceable on the expiry of the said period of thirty days.
 (4) Where any declaration has been made in relation to an award under the proviso
 to sub-section ( 3), the appropriate Government or the Central Government, as the case
 may be, may, within ninety days from the date of communication of the award under
-sub-section ( 2), make an order rejecting or modifying the award, and shall, on the first
+sub-section (2), make an order rejecting or modifying the award, and shall, on the first
 available opportunity, lay the award together with a copy of the order before the Legislature
 of the State, if the order has been made by a State Government, or before Parliament, if the
 order has been made by the Central Government.
 (5) Where any award as rejected or modified by an order made under sub-section (4)
 is laid before the Legislature of a State or before Parliament, such award shall become
 enforceable on the expiry of fifteen days from the date on which it is so laid; and where no
-order under sub-section ( 4) is made in pursuance of a declaration under the proviso to
+order under sub-section (4) is made in pursuance of a declaration under the proviso to
 sub-section (3), the award shall become enforceable on the expiry of the period of ninety
 days referred to in sub-section ( 4).
 (6) Subject to the provisions of sub-section ( 3) and sub-section ( 5) regarding the
 enforceability of an award, the award shall come into operation with effect from such date as
 may be specified therein, but where no date is so specified, it shall come into operation on
-the date when the award becomes enforceable under sub-section ( 3) or sub-section (5), as
+the date when the award becomes enforceable under sub-section (3) or sub-section (5), as
 the case may be.
 56. Where in any case, a Tribunal or a National Industrial Tribunal by its award
 directs reinstatement of any worker and the employer prefers any proceedings against such
@@ -1678,7 +1672,7 @@ shall determine the amount after considering the report of the Commissioner and 
 circumstances of the case.
 (4) The decision of the Tribunal shall be forwarded by it to the appropriate Government
 and any amount found due by the Tribunal may be recovered in the manner provided for in
-sub-section ( 1).
+sub-section (1).
 (5) Where workers employed under the same employer are entitled to receive from him
 any money or any benefit capable of being computed in terms of money, then, subject to
 such rules as may be made in this behalf, a single application for the recovery of the amount
@@ -1722,8 +1716,7 @@ Provided that nothing contained in this section shall apply to a disclosure of a
 such information for the purposes of a prosecution under section 193 of the Indian
 Penal Code.
 CHAPTER VIII
-S
-TRIKES AND LOCK-OUTS
+STRIKES AND LOCK-OUTS
 62. (1) No person employed in an industrial establishment shall go on strike, in breach
 of contract—
 (a) without giving to the employer notice of strike, as hereinafter provided,
@@ -1793,8 +1786,7 @@ consequence of an illegal lock-out shall not be deemed to be illegal.
 64. No person shall knowingly spend or apply any money in direct furtherance or
 support of any illegal strike or lock-out.
 CHAPTER IX
-L
-AY-OFF, RETRENCHMENT AND CLOSURE
+LAY-OFF, RETRENCHMENT AND CLOSURE
 65. (1) Sections 67 to 69 (both inclusive) shall not apply to industrial establishments
 to which Chapter X applies; or
 (a) to industrial establishments in which less than fifty workers on an average
@@ -1979,7 +1971,7 @@ sub-section (1) shall not apply in relation to such undertaking for such period,
 specified in the order.
 75. (1) Where an establishment is closed down for any reason whatsoever, every
 worker who has been in continuous service for not less than one year in that undertaking
-immediately before such closure shall, subject to the provisions of sub-section ( 2), be
+immediately before such closure shall, subject to the provisions of sub-section (2), be
 entitled to notice and compensation in accordance with the provisions of section 70, as if
 the worker had been retrenched:
 Provided that where the undertaking is closed down on account of unavoidable
@@ -2029,7 +2021,7 @@ and (d) of section 3 of the Mines and Minerals (Regulation and Development) Act,
 (4) Where any undertaking set up for the construction of buildings, bridges, roads,
 canals, dams or other construction work is closed down on account of the completion of the
 work within two years from the date on which the undertaking had been set up,
-no worker employed therein shall be entitled to any compensation under clause ( b) of
+no worker employed therein shall be entitled to any compensation under clause (b) of
 section 70, but if the construction work is not so completed within two years, he shall be
 entitled to notice and compensation under that section for every completed year of
 continuous service or any part thereof in excess of six months.
@@ -2048,8 +2040,7 @@ in any State in so far as that law provides for the settlement of industrial dis
 rights and liabilities of employers and workers in so far as they relate to lay-off and
 retrenchment shall be determined in accordance with the provisions of this Chapter.
 CHAPTER X
-S
-PECIAL PROVISIONS RELATING TO LAY-OFF, RETRENCHMENT AND CLOSURE IN CERTAIN
+SPECIAL PROVISIONS RELATING TO LAY-OFF, RETRENCHMENT AND CLOSURE IN CERTAIN
 ESTABLISHMENTS
 77. (1) The provisions of this Chapter shall apply to an industrial establishment (not
 being an establishment of a seasonal character or in which work is performed only
@@ -2126,7 +2117,7 @@ laid-off.
 (9) Notwithstanding anything contained in the foregoing provisions of this section,
 the appropriate Government may, if it is satisfied that owing to such exceptional
 circumstances as accident in the establishment or death of the employer or the like, it is
-necessary so to do, by order, direct that the provisions of sub-section ( 1), or, as the case
+necessary so to do, by order, direct that the provisions of sub-section (1), or, as the case
 may be, sub-section (3) shall not apply in relation to such establishment for such period as
 may be specified in the order.
 (10) The provisions of section 67 (other than the second proviso thereto) shall apply
@@ -2191,7 +2182,7 @@ notice had been given to him.
 (8) Notwithstanding anything contained in the foregoing provisions of this section,
 the appropriate Government may, if it is satisfied that owing to such exceptional circumstances
 as accident in the establishment or death of the employer or the like, it is necessary so to do,
-by order, direct that the provisions of sub-section ( 1) shall not apply in relation to such
+by order, direct that the provisions of sub-section (1) shall not apply in relation to such
 establishment for such period as may be specified in the order.
 (9) Where permission for retrenchment has been granted under sub-section ( 3) or
 where permission for retrenchment is deemed to be granted under sub-section ( 4), every
@@ -2244,7 +2235,7 @@ undertaking had not been closed down.
 (7) Notwithstanding anything contained in the foregoing provisions of this section,
 the appropriate Government may, if it is satisfied that owing to such exceptional circumstances
 as accident in the undertaking or death of the employer or the like it is necessary so to do,
-by order, direct that the provisions of sub-section ( 1) shall not apply in relation to such
+by order, direct that the provisions of sub-section (1) shall not apply in relation to such
 undertaking for such period as may be specified in the order.
 (8) Where an undertaking is permitted to be closed down under sub-section ( 2) or
 where permission for closure is deemed to be granted under sub-section (3), every worker
@@ -2261,8 +2252,7 @@ for work at the establishment at the appointed time during normal working hours.
 as may be, apply also in relation to an industrial establishment to which the provisions of
 this Chapter apply.
 CHAPTER XI
-W
-ORKER RE-SKILLING FUND
+WORKER RE-SKILLING FUND
 83. (1) The appropriate Government shall, by notification, set up a fund to be called
 the worker re-skilling fund (hereafter in this section referred to as "fund").
 (2) The fund shall consist of—
@@ -2308,7 +2298,7 @@ power to summon and enforce attendance of any person acquainted with the facts a
 circumstances of the case to give evidence or to produce any document, which in the
 opinion of such officer, may be useful for or relevant to the subject matter of the enquiry and
 if, on such enquiry, he is satisfied that the person has committed any offence under the
-provisions referred to in sub-section ( 1), he may impose such penalty as he thinks fit in
+provisions referred to in sub-section (1), he may impose such penalty as he thinks fit in
 accordance with such provisions.
 (3) Where a person fails to pay the penalty referred to in sub-section ( 2) within a
 period of ninety days from the date of receipt of the copy of the order, he shall be punishable
@@ -2487,8 +2477,7 @@ fine provided for the offence, in addition to such fine.
 (8) No offence punishable under the provisions of this Code shall be compounded
 except under and in accordance with the provisions of this section.
 CHAPTER XIV
-M
-ISCELLANEOUS
+MISCELLANEOUS
 90. (1) Where an industrial dispute pertaining to an establishment or undertaking is
 already pending before a conciliation officer or an Arbitrator or a Tribunal or a National
 Industrial Tribunal, as the case may be, with regard to matters not covered by the notice of
@@ -2727,7 +2716,7 @@ same under clause (a) of sub-section (1) of section 8;
 such form and containing such particulars under sub-section ( 2) of section 8;
 (j) the form of application for registration under sub-section (1), and the form of
 issuing certificate of registration to be issued by the Registrar to the applicant Trade
-Union under sub-section ( 2) of section 9;
+Union under sub-section (2) of section 9;
 (k) the form of entering the name and other particulars of Trade Union in a
 register maintained by the Registrar in this behalf under sub-section (3) of section 9;
 (l) verification of application of the Trade Union under sub-section (5) of section 9;
@@ -2759,7 +2748,7 @@ by whom and the manner in which such general statement shall be audited under
 clause (a) of sub-section (1) of section 26;
 (v) manner and purpose of recognition of a Trade Union or a federation of Trade
 Unions by the State Government as a State Trade Union at the State level and the
-authority and the manner of deciding dispute by it under sub-section ( 2) of section
+authority and the manner of deciding dispute by it under sub-section (2) of section
 27;
 (w) the manner of forwarding information to the certifying officer under
 sub-section (3) of section 30 and the period within which the amendment of standing
@@ -2802,7 +2791,7 @@ full report under sub-section ( 4), and the form of application and the manner o
 deciding such application under sub-section ( 6), of section 53;
 (zm) the number of persons by whom the notice of strike shall be given, the
 person or persons to whom such notice shall be given, and the manner of giving such
-notice, under sub-section ( 4) of section 62;
+notice, under sub-section (4) of section 62;
 (zn) manner of giving notice of lock-out under sub-section (5) and the authority
 under sub-section (6) of section 62;
 (zo) manner of serving notice before retrenchment of a worker employed in the
@@ -2847,7 +2836,7 @@ provisions of this Code.
 (3) The Central Government shall make rules for the—
 (a) manner of recognition of a Trade Union or federation of Trade Unions by
 the Central Government as a Central Trade Union at the Central level and the authority
-and the manner of deciding dispute by it under sub-section ( 1) of section 27; and
+and the manner of deciding dispute by it under sub-section (1) of section 27; and
 (b) manner of holding an enquiry under sub-section (1) of section 85.
 (4) All rules made under this section by the State Government shall, as soon as
 possible after they are made, be laid before the State Legislature.
@@ -2886,7 +2875,7 @@ to the validity of anything previously done in pursuance of that notification.
 102. In the Finance Act, 2017, in the Eighth Schedule, against serial number 1,—
 (a) in column (2), for the words "Industrial Tribunal constituted by the Central
 Government", the words, brackets and figures "Industrial Tribunal constituted by the
-Central Government under sub-section ( 1) of section 44 of the Industrial Relations
+Central Government under sub-section (1) of section 44 of the Industrial Relations
 Code, 2020" shall be substituted;
 (b) in column (3), for the words and figures "The Industrial Disputes Act, 1947",
 the words and figures "The Industrial Relations Code, 2020" shall be substituted.
