@@ -120,7 +120,7 @@ def search(entry, query, k=12):
         d = next((c for c in entry["chunks"] if c["num"] == 2), None)
         if d:
             picks.insert(0, d)
-    return picks or entry["chunks"][:3]
+    return picks
 
 
 def render_chunks(picks):
