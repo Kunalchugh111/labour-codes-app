@@ -141,12 +141,20 @@ ROUTER_SYSTEM = """You route questions for an assistant covering ONLY these Indi
 (and their Central Rules) that are currently loaded:
 {scope}
 
-Using the latest user message and the conversation, return ONLY JSON:
+Route the latest user message on its own merits. Return ONLY JSON:
 {{"mode":"answer"|"clarify","codes":[...],"message":"..."}}
 
-- "answer": the question clearly concerns one loaded code, OR the user is replying to an earlier
-  clarification by naming a code, OR they explicitly want a comparison (list all relevant ids).
-  Leave "message" empty.
+Keyword hints (use these when the latest message matches; do NOT inherit a code from earlier turns):
+- strike, lock-out, trade union, industrial dispute, retrenchment, lay-off, standing orders, closure,
+  works committee, grievance redressal, negotiating union → "ir"
+- provident fund, PF, EPF, ESI, employees' state insurance, gratuity, pension, maternity benefit,
+  employees' compensation, building & construction workers' cess, gig/platform worker → "ss"
+- minimum wages, payment of wages, deduction, equal remuneration, bonus, wage period → "wages"
+- factories, working hours, leave, welfare facilities, hazardous, contract labour, inter-state migrant,
+  mines, dock, plantation → "osh"
+
+- "answer": the latest message clearly concerns one loaded code (use the keyword hints), OR explicitly
+  asks for a comparison (list all relevant ids). Leave "message" empty.
 - "clarify": a term/topic is defined or treated differently across more than one loaded code and the
   user hasn't said which (e.g. "wages", "employee", "worker", "appropriate Government", "establishment").
   Put candidate ids in "codes" and a short, polite question naming those codes in "message".
@@ -178,9 +186,11 @@ def run_pipeline(history, forced_code=None):
     if forced_code and forced_code in LOADED:
         codes = [forced_code]
     else:
+        last_user = next((m for m in reversed(history) if m["role"] == "user"), None)
+        router_history = [last_user] if last_user else []
         try:
             route = json.loads(gemini(ROUTER_SYSTEM.format(scope=scope_lines()),
-                                      to_contents(history), want_json=True, temperature=0.0))
+                                      to_contents(router_history), want_json=True, temperature=0.0))
         except Exception:
             route = {"mode": "answer", "codes": list(LOADED)[:1]}
         if route.get("mode") == "clarify":
@@ -198,8 +208,19 @@ def run_pipeline(history, forced_code=None):
     query = history[-1]["content"]
     picks, sources = [], []
     for cid in codes:
-        picks += corpus.search(LOADED[cid], query, k=12)
-        sources.append(LOADED[cid]["meta"]["title"])
+        chunks = corpus.search(LOADED[cid], query, k=12)
+        if chunks:
+            picks += chunks
+            sources.append(LOADED[cid]["meta"]["title"])
+
+    if not picks:
+        other = [cid for cid in LOADED if cid not in codes]
+        opts = [{"id": cid, "label": LOADED[cid]["meta"]["short"]} for cid in other]
+        chosen = " and ".join(LOADED[c]["meta"]["short"] for c in codes)
+        msg = (f"I didn't find anything on that in **{chosen}**. "
+               "Would you like me to check another code?")
+        return {"kind": "clarify", "content": msg, "options": opts}
+
     grounding = corpus.render_chunks(picks)
     contents = [{"role": "user", "parts": [{"text": "Use only the following statutory text:\n\n" + grounding}]},
                 {"role": "model", "parts": [{"text": "Understood. I will answer strictly from this text "
