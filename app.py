@@ -270,7 +270,7 @@ if not st.session_state.messages:
         (c1 if i % 2 == 0 else c2).button(s, key=f"samp{i}", on_click=ask, args=(s,))
 else:
     for i, m in enumerate(st.session_state.messages):
-        with st.chat_message(m["role"], avatar=("§" if m["role"] == "assistant" else "🧑")):
+        with st.chat_message(m["role"], avatar=("⚖️" if m["role"] == "assistant" else "🧑")):
             if m.get("kind") == "clarify":
                 st.markdown(m["content"])
                 last = (i == len(st.session_state.messages) - 1)
