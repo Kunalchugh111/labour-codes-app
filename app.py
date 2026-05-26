@@ -141,7 +141,8 @@ ROUTER_SYSTEM = """You route questions for an assistant covering ONLY these Indi
 (and their Central Rules) that are currently loaded:
 {scope}
 
-Route the latest user message on its own merits. Return ONLY JSON:
+Route the latest user message on its own merits. Earlier turns are NOT context — do not infer
+the topic from them. Return ONLY JSON:
 {{"mode":"answer"|"clarify","codes":[...],"message":"..."}}
 
 Keyword hints (use these when the latest message matches; do NOT inherit a code from earlier turns):
@@ -153,12 +154,19 @@ Keyword hints (use these when the latest message matches; do NOT inherit a code 
 - factories, working hours, leave, welfare facilities, hazardous, contract labour, inter-state migrant,
   mines, dock, plantation → "osh"
 
+Out-of-scope examples (return mode="answer", codes=[]):
+- weather, time of day, today's date, news, sports, generic chitchat
+- taxation (GST, income tax, customs), corporate law, criminal law, family law
+- meta-questions like "which codes do you cover?", "what can you do?", "who are you?"
+- anything that doesn't map to a keyword hint above and isn't clearly about employment, wages,
+  working conditions, social security, or industrial relations
+
 - "answer": the latest message clearly concerns one loaded code (use the keyword hints), OR explicitly
   asks for a comparison (list all relevant ids). Leave "message" empty.
 - "clarify": a term/topic is defined or treated differently across more than one loaded code and the
   user hasn't said which (e.g. "wages", "employee", "worker", "appropriate Government", "establishment").
   Put candidate ids in "codes" and a short, polite question naming those codes in "message".
-- "answer" with empty "codes": clearly outside all loaded codes.
+- "answer" with empty "codes": clearly outside all loaded codes (use the out-of-scope examples above).
 Be decisive; only clarify when the ambiguity genuinely changes the legal answer."""
 
 ANSWER_SYSTEM = """You are a precise legal-reference assistant for HR staff. Answer ONLY from the \
@@ -201,8 +209,11 @@ def run_pipeline(history, forced_code=None):
         codes = [c for c in route.get("codes", []) if c in LOADED]
 
     if not codes:
-        return {"kind": "answer", "content": "That question doesn't appear to fall within the labour "
-                "codes loaded here. I can only answer from those codes and their Central Rules.",
+        loaded_list = ", ".join(LOADED[c]["meta"]["short"] for c in LOADED)
+        return {"kind": "answer",
+                "content": (f"I can only answer from the loaded labour codes and their Central Rules: "
+                            f"**{loaded_list}**. Your question doesn't appear to fall within them — "
+                            "please rephrase, or ask about one of these codes."),
                 "sources": []}
 
     query = history[-1]["content"]
@@ -224,7 +235,8 @@ def run_pipeline(history, forced_code=None):
     grounding = corpus.render_chunks(picks)
     contents = [{"role": "user", "parts": [{"text": "Use only the following statutory text:\n\n" + grounding}]},
                 {"role": "model", "parts": [{"text": "Understood. I will answer strictly from this text "
-                 "and cite exact Sections and Rules."}]}] + to_contents(history)
+                 "and cite exact Sections and Rules."}]},
+                {"role": "user", "parts": [{"text": query}]}]
     answer = gemini(ANSWER_SYSTEM, contents, temperature=0.2)
     return {"kind": "answer", "content": answer, "sources": sources}
 
