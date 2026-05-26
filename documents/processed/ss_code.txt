@@ -42,7 +42,7 @@ CG-DL-E-29092020-222111
 2 THE GAZETTE OF INDIA EXTRAORDINARY [P ART II—
 (4) The applicability of the Chapters specified in columns ( 1) and ( 2) of the First
 Schedule shall, without prejudice to the applicability of the other provisions of this Code,
-be such as is specified in corresponding entry in column ( 3) of that Schedule.
+be such as is specified in corresponding entry in column (3) of that Schedule.
 (5) Notwithstanding anything contained in sub-section ( 4), where it appears to the
 Central Provident Fund Commissioner, whether on an application made to him by the
 employer of an establishment or otherwise, that the employer and majority of employees
@@ -643,8 +643,7 @@ sub-section (2), the conditions subject to which the registration shall be cance
 procedure of cancellation and other matters relating thereto, shall be such as may be
 prescribed by the Central Government.
 CHAPTER II
-S
-OCIAL SECURITY ORGANISATIONS
+SOCIAL SECURITY ORGANISATIONS
 4. (1) The Central Government may, by notification, constitute, with effect from such
 date as may be specified therein, a Board of Trustees of the Employees' Provident Fund to
 be called the Central Board, for the purposes of Chapter III and the provisions of this Code
@@ -1051,7 +1050,7 @@ provisions of this Code, as may be prescribed by the Central Government.
 cause, a full report of any action taken by it under this section and the circumstances
 leading to such action, to be laid before each House of Parliament or the State Legislature,
 as the case may be, at the earliest opportunity and in any case not later than three months
-from the date of the notification of supersession issued under sub-section ( 1).
+from the date of the notification of supersession issued under sub-section (1).
 12. (1) The Central Government may, by notification,—
 (i) after consultation with the Government of any State, constitute for that
 State, a Board of Trustees (hereinafter in this Code referred to as a State Board) which
@@ -1115,8 +1114,7 @@ while discharging the functions specified in clause ( i); and
 (v) provide that any expenditure referred to in clause (iii) shall be made by the
 Social Security Organisation after prior approval of the Central Government.
 CHAPTER III
-E
-MPLOYEES’ PROVIDENT FUND
+EMPLOYEES’ PROVIDENT FUND
 14. (1) The Central Government may appoint a Central Provident Fund Commissioner
 who shall be the Chief Executive Officer of the Central Board and shall also function as
 head of the Employees’ Provident Fund Organisation.
@@ -1578,7 +1576,7 @@ from the contractor, either by deduction from any amount payable to him by the e
 under any contract, or as a debt payable by the contractor.
 (7) The contractor shall maintain a register of employees employed by or through
 him as provided in the regulations and submit the same to the employer before the settlement
-of any amount payable under sub-section ( 6).
+of any amount payable under sub-section (6).
 (8) In the case referred to in sub-section (6), the contractor shall be entitled to recover
 the employee's contribution from the employee employed by or through him by deduction
 from wages and not otherwise, subject to such conditions as specified in the proviso to
@@ -1750,7 +1748,7 @@ include any period before the date of the application.
 (6) Subject to the foregoing provisions of this section, a medical board may deal
 with a case of review in any manner in which it could deal with it on an original reference
 to it, and in particular may make a provisional assessment notwithstanding that the
-assessment under review was final and the provisions of sub-section ( 2) shall apply to an
+assessment under review was final and the provisions of sub-section (2) shall apply to an
 application for review under this sub-section and to a decision of a medical board in
 connection with such application as they apply to a case for disablement benefit under that
 sub-section and to a decision of the medical board in connection with such case.
@@ -1834,7 +1832,7 @@ by the Central Government, any State Government, Public Sector Undertaking of th
 Government or the State Government or any other body notified by the Central Government.
 Explanation.—For the purposes of this sub-section, the expression "other body"
 means any such organisation of persons which the Central Government considers capable
-to run colleges and training institutions referred to in sub-section ( 4).
+to run colleges and training institutions referred to in sub-section (4).
 (6) The Corporation may, in order to take preventive and curative measures for welfare
 of the Insured Persons, carry out such occupational and epidemiological surveys and studies
 for assessment of health and working conditions of Insured Persons in such manner as
@@ -2000,7 +1998,7 @@ the claim is not settled by agreement, the Corporation may refer the matter, wit
 in support of its claim, to the appropriate Government.
 (2) If the appropriate Government is of the opinion that a prima facie case for inquiry
 is made out, it may appoint a competent person or persons to hold an inquiry into the
-matter referred under sub-section ( 1).
+matter referred under sub-section (1).
 (3) If upon inquiry under sub-section (2), it is proved to the satisfaction of the person
 or persons holding the inquiry that the excess in incidence of sickness among the Insured
 Persons is due to the default or neglect of the owner or occupier of the factory or other
@@ -2192,8 +2190,7 @@ Insurance Court, that Court may, and if so directed by the High Court, shall, pe
 decision of the appeal, withhold the payment of any sum directed to be paid by the order
 appealed against.
 CHAPTER V
-G
-RA TUITY
+GRA TUITY
 53. (1) Gratuity shall be payable to an employee on the termination of his employment
 after he has rendered continuous service for not less than five years,—
 (a) on his superannuation; or
@@ -2403,7 +2400,7 @@ sixty days:
 Provided further that no appeal by an employer shall be admitted unless at the time
 of preferring the appeal, the appellant either produces a certificate of the competent authority
 to the effect that the appellant has deposited with him an amount equal to the amount of
-gratuity required to be deposited under sub-section ( 5), or deposits with the appellate
+gratuity required to be deposited under sub-section (5), or deposits with the appellate
 authority such amount.
 (9) The appropriate Government or the appellate authority, as the case may be, may,
 after giving the parties to the appeal a reasonable opportunity of being heard, confirm,
@@ -2413,7 +2410,7 @@ in this behalf, every employer, other than an employer or an establishment belon
 under the control of, the Central Government or a State Government, shall, subject to the
 provisions of sub-section (2), obtain an insurance in the manner prescribed by the Central
 Government, for his liability for payment towards the gratuity under this Chapter, from
-any insurance company regulated by the Authority as defined under clause ( b) of
+any insurance company regulated by the Authority as defined under clause (b) of
 sub-section (1) of section 2 of the Insurance Regulatory and Development Authority Act, 1999:
 Provided that different dates may be appointed for different establishments or class
 of establishments or for different areas.
@@ -2438,7 +2435,7 @@ approved gratuity fund referred to in sub-section ( 2).
 (4) The appropriate Government may provide for the composition of the Board of
 Trustees of the approved gratuity fund and for the recovery by the competent authority of
 the amount of the gratuity payable to an employee from the insurer with whom an insurance
-has been taken under sub-section ( 1), or as the case may be, the Board of Trustees of the
+has been taken under sub-section (1), or as the case may be, the Board of Trustees of the
 approved gratuity fund, in such manner as may be prescribed.
 (5) Where an employer fails to make any payment by way of premium in respect of the
 insurance referred to in sub-section ( 1) or by way of contribution to an approved gratuity
@@ -2459,8 +2456,7 @@ him for decision under this Chapter, choose one or more persons possessing speci
 knowledge of any matter relevant to the matter under reference to assist him in holding the
 inquiry relating thereto.
 CHAPTER VI
-M
-ATERNITY BENEFIT
+MATERNITY BENEFIT
 59. (1) No employer shall knowingly employ a woman in any establishment during the
 six weeks immediately following the day of her delivery, miscarriage or medical termination
 of pregnancy.
@@ -2578,7 +2574,7 @@ own motion or on an application made to him by the woman, order the payment of s
 benefit or amount within such period as may be specified in the order.
 63. If a woman entitled to maternity benefit or any other amount under this Chapter,
 dies before receiving such maternity benefit or amount, or where the employer is liable for
-maternity benefit under the second proviso to sub-section ( 3) of section 60, the employer
+maternity benefit under the second proviso to sub-section (3) of section 60, the employer
 shall pay such benefit or amount to the person nominated by the woman in the notice given
 under section 62 and in case there is no such nominee, to her legal representative.
 64. Every woman entitled to maternity benefit under this Chapter shall also be entitled
@@ -2702,8 +2698,7 @@ to such person, appeal to the authority prescribed by the appropriate Government
 been preferred to it under that sub-section or of the Inspector-cum-Facilitator where no
 such appeal has been preferred, shall be final.
 CHAPTER VII
-E
-MPLOYEE'S COMPENSATION
+EMPLOYEE'S COMPENSATION
 73. (1) Where, by any law for the time being in force, notice is required to be given to
 any authority, by or on behalf of an employer, of any accident occurring in his premises
 which results in death or serious bodily injury, the person required to give the notice shall,
@@ -2778,7 +2773,7 @@ modify or add any description of employment to the employments specified in the 
 Schedule, and occupational diseases specified in the Third Schedule and shall specify in
 the case of employments so modified or added, the diseases which shall be deemed for the
 purposes of this section to be occupational diseases peculiar to those employments
-respectively, and thereupon the provisions of sub-section ( 2) shall apply, in the case of a
+respectively, and thereupon the provisions of sub-section (2) shall apply, in the case of a
 notification by the Central Government, within the territories to which this Code extends
 or, in case of a notification by the State Government, within that State as if such diseases
 had been declared by this Code to be occupational diseases peculiar to those employments.
@@ -2861,7 +2856,7 @@ relation to different injuries specified in the Fourth Schedule;
 (d) where temporary disablement, whether total or partial, results from the
 injury, a half-monthly payment of the sum equivalent to twenty-five per cent. of
 monthly wages of the employee, to be paid in accordance with the provisions of
-sub-section ( 4).
+sub-section (4).
 (2) Notwithstanding anything contained in sub-section ( 1), while fixing the amount
 of compensation payable to an employee in respect of an accident which occurred outside
 India, the competent authority shall take into account the amount of compensation, if any,
@@ -3043,7 +3038,7 @@ of any sum already paid to him.
 (9) Where the competent authority varies any order under sub-section ( 8) by reason
 of the fact that payment of compensation to any person has been obtained by fraud,
 impersonation or other improper means, any amount so paid to or on behalf of such person
-may be recovered in the manner as specified in sub-section ( 10).
+may be recovered in the manner as specified in sub-section (10).
 (10) The competent authority may recover as an arrear of land revenue any amount
 referred to in sub-section (9), and for such purpose the competent authority shall be deemed
 to be a public officer within the meaning of section 5 of the Revenue Recovery Act, 1890.
@@ -3083,7 +3078,7 @@ the injured employee was employed had knowledge of the accident from any other
 source at or about the time when it occurred:
 Provided that the competent authority may entertain and decide any claim to
 compensation in any case notwithstanding that the notice has not been given, or the
-claim has not been preferred in due time as provided under sub-section ( 1), if he is
+claim has not been preferred in due time as provided under sub-section (1), if he is
 satisfied that the failure so to give the notice or prefer the claim, as the case may be,
 was due to sufficient cause.
 (3) Every such notice shall give the name and address of the person injured and shall
@@ -3292,7 +3287,7 @@ SEC. 1] THE GAZETTE OF INDIA EXTRAORDINARY 61
 (6) The provisions of sub-section (4) shall apply in the case of any amount for which
 an insurer is entitled to prove under sub-section ( 3), but otherwise those provisions shall
 not apply where the insolvent or the company being wound up has entered into such a
-contract with insurers as is referred to in sub-section ( 1).
+contract with insurers as is referred to in sub-section (1).
 (7) The provisions of this section shall not apply where a company is wound up
 voluntarily merely for the purposes of reconstruction or of amalgamation with another
 company.
@@ -3540,8 +3535,7 @@ the date of passing of the order.
 (3) The provisions of section 5 of the Limitation Act, 1963, shall be applicable to
 appeal under this section.
 CHAPTER VIII
-S
-OCIAL SECURITY AND CESS IN RESPECT OF BUILDING AND
+SOCIAL SECURITY AND CESS IN RESPECT OF BUILDING AND
 OTHER CONSTRUCTION WORKERS
 100. (1) There shall be levied and collected a cess for the purposes of social security
 and welfare of building workers at such rate not exceeding two per cent. but not less than
@@ -3679,8 +3673,7 @@ towards salaries, allowances and other remuneration to its members, officers and
 employees and for meeting the other administrative expenses exceeding five per cent. of
 its total expenses during that financial year.
 CHAPTER IX
-S
-OCIAL SECURITY FOR UNORGANISED WORKERS, GIG WORKERS AND
+SOCIAL SECURITY FOR UNORGANISED WORKERS, GIG WORKERS AND
 PLATFORM WORKERS
 109. (1) The Central Government shall frame and notify, from time to time, suitable
 welfare schemes for unorganised workers on matters relating to—
@@ -3856,7 +3849,7 @@ section 6 shall be the Board for the purposes of the welfare of gig workers and 
 workers under the provisions of this Code:
 Provided that while such Board serves the purposes of welfare of, or matters relating
 to, gig workers and platform workers, the following members shall constitute the Board
-instead of the members specified in clauses ( c) and ( d) of sub-section ( 2) of section 6,
+instead of the members specified in clauses (c) and ( d) of sub-section ( 2) of section 6,
 namely:—
 (a) five representatives of the aggregators as the Central Government may
 nominate;
@@ -3969,8 +3962,7 @@ Provided that in the case of Provident Fund, Pension Fund or Insurance Fund, suc
 writing off shall be specified in the Provident Fund Scheme or Pension Scheme or Insurance
 Scheme, as the case may be.
 CHAPTER XI
-A
-UTHORITIES, ASSESSMENT, COMPLIANCE AND RECOVERY
+AUTHORITIES, ASSESSMENT, COMPLIANCE AND RECOVERY
 122. (1) The Central Government for the purposes of Chapter III and Chapter IV and
 for the provisions in this Code relating to those Chapters, and the appropriate Government
 for the purposes of other provisions of this Code, may, by notification, appoint Inspectorcum-Facilitators who shall discharge his duties under this Code and exercise the powers
@@ -4604,15 +4596,14 @@ prosecution shall be instituted in relation to such offence, against the offende
 whom the offence is so compounded.
 (6) Where the compounding of any offence is made after the institution of any
 prosecution, such compounding shall be brought to the notice of the court in which the
-prosecution is pending in writing by the officer referred to in sub-section ( 1), and on such
+prosecution is pending in writing by the officer referred to in sub-section (1), and on such
 notice of the compounding of the offence being given to the court, the person against
 whom the offence is so compounded shall be discharged.
 (7) Any person who fails to comply with the order made by the officer referred to in
 sub-section (1), shall be liable to pay a sum equivalent to twenty per cent. of the maximum
 fine provided for the offence, in addition to such fine.
 CHAPTER XIII
-E
-MPLOYMENT INFORMA TION AND MONITORING
+EMPLOYMENT INFORMA TION AND MONITORING
 139. (1) The appropriate Government may, by notification, require that from such date
 as may be specified in the notification, the employer in every establishment or any class or
 category of establishments, before filling up any vacancy in any employment in that
@@ -4661,8 +4652,7 @@ may be notified by the Central Government; or
 (b) vacancies in an employment which carries a monthly remuneration of less
 than an amount notified by the appropriate Government.
 CHAPTER XIV
-M
-ISCELLANEOUS
+MISCELLANEOUS
 141. (1) There shall be established by the Central Government a Social Security Fund
 for social security and welfare of the unorganised workers, gig workers and platform workers
 and the sources of the fund shall comprise of funding received—
@@ -4675,7 +4665,7 @@ central labour law.
 under each of the clauses (i), (ii) and (iii).
 (3) Social Security Fund referred to in sub-section ( 1) shall be expended for the
 purposes for which each separate account has been established and maintained under
-sub-section ( 2).
+sub-section (2).
 (4) The Social Security Fund shall be established and administered in the manner
 prescribed by the Central Government.
 (5) There shall be established by the State Government a Social Security Fund for the
@@ -4776,7 +4766,7 @@ facilities for inspection and pay such inspection charges as the Central Governm
 direct.
 (7) If employer in relation to any establishment or class of establishments or employee
 or class of employees in respect of whom the exemption has been granted under
-sub-section ( 1), fails to comply with any of the conditions specified under this section,
+sub-section (1), fails to comply with any of the conditions specified under this section,
 then, the appropriate Government may on such failure, cancel the exemption so granted.
 (8) Where any exemption granted under sub-section (1) is cancelled, the entire amount
 of surplus and reserves, if any, and accumulations to the credit of every employee, to whom
@@ -4802,7 +4792,7 @@ notified by the appropriate Government:
 Provided that in respect of any surrender of exemption from the Provident Fund
 Scheme, the Pension Scheme and the Insurance Scheme, the time limit, form and manner of
 transfer of accumulation of exempted employees and surplus and reserves from the fund
-referred to in sub-section ( 5), to the concerned statutory funds under this Code shall be
+referred to in sub-section (5), to the concerned statutory funds under this Code shall be
 such as may be specified in the concerned schemes framed under Chapter III.
 144. Notwithstanding anything contained in Chapter III or Chapter IV , the Central
 Government may by order, defer or reduce employer's contribution, or employee's contribution,
@@ -4941,7 +4931,7 @@ Act, 1996,
 shall, after the commencement of this Code, continue to exercise the powers and discharge
 the functions of the corresponding organisations under this Code, respectively, the Central
 Board of Trustees for Employees Provident Fund constituted under section 4, the Executive
-Committee constituted under sub-section ( 3) of section 4, the Employees State Insurance
+Committee constituted under sub-section (3) of section 4, the Employees State Insurance
 Corporation, constituted under section 5, the Medical Benefit Committee constituted under
 sub-section (5) of section 5, the Standing Committee constituted under sub-section ( 3) of
 section 5, Building Workers' Welfare Board constituted under sub-section (1) of section 7,
@@ -4978,8 +4968,7 @@ sub-section ( 3) and the manner of composition of the Board of Trustees of the
 approved gratuity fund and the manner in which the competent authority may recover
 the amount of the gratuity payable to an employee from the insurer under
 sub-section (4) of section 57;
-(h
-) the qualifications and experience of the officer appointed as the competent
+(h) the qualifications and experience of the officer appointed as the competent
 authority under sub-section ( 1) of section 58;
 (i) authority to whom an appeal may be preferred under sub-section ( 3) of
 section 72;
@@ -5061,7 +5050,7 @@ under sub-section (7), of section 4;
 representation of States under clause (d) of sub-section (1), the manner of constitution
 of Standing Committee under sub-section ( 3), the manner of administration of the
 affairs of the Corporation, exercise of powers and performance of functions by the
-Standing Committee under clause ( a) of sub-section ( 4), the duties and powers of
+Standing Committee under clause (a) of sub-section ( 4), the duties and powers of
 Medical Benefit Committee under clause ( b) of sub-section ( 5) and the terms and
 conditions, including tenure of office, subject to which a member of the Corporation
 and Standing Committee shall discharge their respective duties under sub-section (7)
@@ -5080,9 +5069,9 @@ under sub-section (1), and the fee and allowances of members of such Social Secu
 Organisation or Committee under sub-section (4) of section 9;
 (i) manner of reconstitution of the Corporation or the Central Board or the
 National Social Security Board or the State Unorganised Workers' Board or the Building
-Workers' Welfare Board or any of the Committees under sub-section ( 1) and the
+Workers' Welfare Board or any of the Committees under sub-section (1) and the
 alternate arrangements for the purpose of administration of the relevant provisions of
-this Code under sub-section ( 2) of section 11;
+this Code under sub-section (2) of section 11;
 (j) the manner of maintenance of a provident fund account in relation to the
 establishment under sub-section ( 1) of section 21;
 (k) the form, manner, time limits and fees for filing of appeal under sub-section (2)
@@ -5132,8 +5121,7 @@ limit to get establishment registered by the employer under sub-section (3), of 
 proof of delivery under sub-section (5) of section 62;
 (zc) the proof of miscarriage or medical termination of pregnancy under
 sub-section ( 1), the proof of tubectomy operation under sub-section ( 2) and the
-proof of illness under sub-section (
-3) of section 65;
+proof of illness under sub-section ( 3) of section 65;
 (zd) the duration of breaks under section 66;
 (ze) the number of employees and distance for crèche facility under sub-section (1)
 of section 67;
@@ -5177,7 +5165,7 @@ rules may provide for all or any of the following matters, namely:—
 Unorganised Workers' Board under sub-section ( 9), the manner of nomination of
 members of the Board, their term of office and other conditions of service, the procedure
 to be followed in the discharge of their functions by, and the manner of filling vacancies
-among the members of, the Board under sub-section ( 12), and the time, place and
+among the members of, the Board under sub-section (12), and the time, place and
 rules of procedure relating to the transaction of business at its meetings under
 sub-section (14) of section 6;
 (b) the terms and conditions of appointment and the salaries and other
@@ -5185,8 +5173,7 @@ allowances payable to the chairperson and the other members of the Building Work
 Welfare Board and the manner of filling of casual vacancies of such members, under
 sub-section (4), the terms and conditions of appointment and the salary and allowances
 payable to the Secretary and the other officers and employees of the said Board under
-clause (c) of sub-section (
-5) of section 7;
+clause (c) of sub-section (5) of section 7;
 (c) procedure to be followed by the Employees' Insurance Court under
 sub-section (2) and the rules under sub-section ( 3) of section 50;
 (d) the amount to be deposited towards the expenditure of the funeral of the
@@ -5223,7 +5210,7 @@ under clause ( b) of sub-section ( 4) and the composition of committees under
 sub-section (6) of section 5;
 (b) the areas in respect of which the Corporation may appoint Regional Boards
 and local committees and the manner in which such Boards and committees shall
-perform the functions and exercise the powers under sub-section ( 2) of section 12;
+perform the functions and exercise the powers under sub-section (2) of section 12;
 (c) such other functions of the Director General and the Financial Commissioner
 under sub-section (4), the method of recruitment, salary and allowances, discipline
 and other conditions of service of the officers and employees under clause ( a) of
@@ -5236,8 +5223,7 @@ sub-section (4) of section 29;
 sub-section (7), and any matter relating or incidental to the payment and collection of
 contribution under sub-section ( 9) of section 31;
 (f) qualifications and experience of other person to certify sickness under
-clause (
-a), authority to certify eligibility of a woman under clause ( b), authority to
+clause (a), authority to certify eligibility of a woman under clause ( b), authority to
 certify eligibility for payment under clause ( c) of sub-section (1), the conditions for
 extension of medical benefits under sub-section ( 2) and any matter relating or
 incidental to the accrual and payment of benefits under sub-section (4) of section 32;
@@ -5257,9 +5243,9 @@ medical benefits under the second proviso and the conditions for grant of medica
 benefits to the Insured Person during employment injury under the fourth proviso, to
 sub-section (3), the time for which students of medical education institutions shall
 serve the Corporation and the manner in which the bond shall be furnished under
-clause ( b) of sub-section ( 4) and manner of carrying out occupational and
+clause (b) of sub-section ( 4) and manner of carrying out occupational and
 epidemiological surveys and studies for assessment of health and working conditions
-of Insured Persons under sub-section ( 6) of section 39;
+of Insured Persons under sub-section (6) of section 39;
 (j) other authority for providing permission to leave the area in which medical
 treatment provided under clause ( c) of sub-section ( 3), form of nomination under
 sub-section ( 6) and the authority to determine benefits under sub-section ( 9) of
@@ -5268,7 +5254,7 @@ section 41;
 clause (c) of the Explanation to section 44;
 (l) time within which the claims, recovery or contribution, from employer by the
 Corporation and recovery of contribution by the employer from the Contractor, shall
-be made under the second proviso to sub-section ( 1) of section 51;
+be made under the second proviso to sub-section (1) of section 51;
 (m) the forms of records and registers and of returns to be filed under the
 second proviso to clause ( d) of section 123;
 (n) the appellate authority not below the rank of the Joint Director of the
