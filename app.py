@@ -25,63 +25,134 @@ st.set_page_config(page_title="Labour Codes Assistant", page_icon="§", layout="
 # ----------------------------------------------------------------- styling
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 :root{
-  --bg1:#16120e; --bg2:#1e1813; --card:#221b14; --line:rgba(201,162,94,.20);
-  --gold:#c9a25e; --gold2:#e2c489; --txt:#efe7d8; --muted:#a59a87;
+  --bg:#fafafa;
+  --card:#ffffff;
+  --border:#e2e8f0;
+  --text:#0f172a;
+  --muted:#64748b;
+  --accent:#2563eb;
+  --accent-soft:#eff6ff;
 }
 .stApp{
-  background:radial-gradient(1100px 600px at 50% -8%, #241d15 0%, var(--bg1) 55%) fixed;
-  color:var(--txt); font-family:'Plus Jakarta Sans',system-ui,sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  font-family:'Inter',system-ui,-apple-system,sans-serif;
+  -webkit-font-smoothing:antialiased;
 }
-/* hide default chrome for an app-like feel */
+/* hide default chrome */
 [data-testid="stHeader"],[data-testid="stToolbar"],#MainMenu,footer{display:none!important;}
-.block-container{max-width:820px;padding-top:2.2rem!important;padding-bottom:6rem;}
-h1,h2,h3,h4{font-family:'Fraunces',Georgia,serif;color:var(--txt);}
+.block-container{max-width:760px;padding-top:3rem!important;padding-bottom:6rem;}
+h1,h2,h3,h4{color:var(--text);font-family:'Inter',sans-serif;letter-spacing:-0.02em;}
 
 /* hero */
-.lc-hero{text-align:center;margin:.2rem 0 1.4rem;}
-.lc-seal{display:inline-grid;place-items:center;width:64px;height:64px;border-radius:50%;
-  border:1.6px solid var(--gold);color:var(--gold);font:600 30px 'Fraunces',serif;
-  box-shadow:0 0 0 6px rgba(201,162,94,.06),0 14px 40px -18px rgba(0,0,0,.8);margin-bottom:14px;}
-.lc-title{font-family:'Fraunces',serif;font-weight:600;font-size:38px;line-height:1.05;margin:0;
-  background:linear-gradient(180deg,#f6efe0,#cdb486);-webkit-background-clip:text;background-clip:text;
-  -webkit-text-fill-color:transparent;letter-spacing:.3px;}
-.lc-sub{color:var(--muted);font-size:15px;margin:.5rem auto 0;max-width:520px;line-height:1.5;}
-.lc-rule{height:1px;background:linear-gradient(90deg,transparent,var(--line),transparent);margin:1.3rem 0;}
-.lc-badges{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;margin-top:14px;}
-.lc-badge{font-size:12px;color:var(--gold2);border:1px solid var(--line);background:rgba(201,162,94,.06);
-  padding:4px 11px;border-radius:999px;letter-spacing:.2px;}
-.lc-eyebrow{color:var(--muted);font-size:12.5px;letter-spacing:.16em;text-transform:uppercase;
-  text-align:center;margin:.3rem 0 .7rem;}
+.lc-hero{text-align:left;margin:0 0 1.5rem;}
+.lc-title{
+  font-size:30px;
+  font-weight:700;
+  color:var(--text);
+  margin:0 0 0.5rem;
+  letter-spacing:-0.025em;
+  line-height:1.2;
+}
+.lc-sub{
+  color:var(--muted);
+  font-size:15px;
+  margin:0;
+  max-width:560px;
+  line-height:1.55;
+}
+.lc-badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:1.25rem;}
+.lc-badge{
+  font-size:12px;
+  font-weight:500;
+  color:var(--muted);
+  background:var(--card);
+  border:1px solid var(--border);
+  padding:4px 10px;
+  border-radius:6px;
+  letter-spacing:0;
+}
+.lc-rule{height:1px;background:var(--border);margin:1.5rem 0;}
+.lc-eyebrow{
+  color:var(--muted);
+  font-size:13px;
+  font-weight:500;
+  margin:0.5rem 0 0.75rem;
+  letter-spacing:0;
+  text-transform:none;
+  text-align:left;
+}
 
 /* notices */
-.lc-warn{border:1px solid var(--line);background:rgba(201,162,94,.07);border-radius:12px;
-  padding:12px 16px;color:var(--gold2);font-size:14px;text-align:center;margin-bottom:6px;}
+.lc-warn{
+  border:1px solid var(--border);
+  background:var(--accent-soft);
+  border-radius:8px;
+  padding:12px 16px;
+  color:var(--text);
+  font-size:14px;
+  text-align:left;
+  margin-bottom:1rem;
+}
 
 /* chat */
-[data-testid="stChatMessage"]{background:transparent;border:none;padding:.15rem 0;}
-[data-testid="stChatMessageContent"]{font-size:15.5px;line-height:1.65;}
+[data-testid="stChatMessage"]{background:transparent;border:none;padding:0.5rem 0;}
+[data-testid="stChatMessageContent"]{font-size:15px;line-height:1.6;color:var(--text);}
 [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]){
-  background:var(--card);border:1px solid var(--line);border-left:3px solid var(--gold);
-  border-radius:14px;padding:14px 18px;box-shadow:0 18px 50px -34px rgba(0,0,0,.9);}
-[data-testid="stChatMessageContent"] strong{color:var(--gold2);font-weight:600;}
-.lc-src{color:var(--gold);font-size:12px;font-weight:600;letter-spacing:.06em;
-  text-transform:uppercase;margin-bottom:7px;}
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:14px 18px;
+}
+[data-testid="stChatMessageContent"] strong{color:var(--text);font-weight:600;}
+.lc-src{
+  color:var(--muted);
+  font-size:12px;
+  font-weight:500;
+  letter-spacing:0;
+  text-transform:none;
+  margin-bottom:6px;
+}
 
 /* buttons / chips */
-.stButton>button{background:rgba(201,162,94,.08);color:var(--gold2);border:1px solid var(--line);
-  border-radius:11px;padding:9px 14px;font-size:14px;font-weight:500;transition:.16s;width:100%;
-  text-align:left;line-height:1.35;}
-.stButton>button:hover{background:var(--gold);color:#1a140d;border-color:var(--gold);transform:translateY(-1px);}
+.stButton>button{
+  background:var(--card);
+  color:var(--text);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:10px 14px;
+  font-size:14px;
+  font-weight:500;
+  transition:0.15s ease;
+  width:100%;
+  text-align:left;
+  line-height:1.4;
+}
+.stButton>button:hover{
+  background:var(--accent-soft);
+  color:var(--accent);
+  border-color:var(--accent);
+}
 
 /* chat input */
-[data-testid="stChatInput"]{background:var(--card);border:1px solid var(--line);border-radius:14px;}
-[data-testid="stChatInput"] textarea{color:var(--txt)!important;font-size:15.5px;}
+[data-testid="stChatInput"]{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:10px;
+}
+[data-testid="stChatInput"] textarea{color:var(--text)!important;font-size:15px;}
 [data-testid="stChatInput"] textarea::placeholder{color:var(--muted);}
-[data-testid="stBottomBlockContainer"]{background:transparent;}
-.lc-foot{color:var(--muted);font-size:11.5px;text-align:center;font-style:italic;margin-top:.6rem;}
+[data-testid="stBottomBlockContainer"]{background:var(--bg);}
+.lc-foot{
+  color:var(--muted);
+  font-size:12px;
+  text-align:center;
+  font-style:normal;
+  margin-top:1rem;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -260,8 +331,7 @@ def ask(query, forced_code=None, label=None):
 badges = "".join(f'<span class="lc-badge">{e["meta"]["short"]}</span>' for e in LOADED.values())
 st.markdown(f"""
 <div class="lc-hero">
-  <div class="lc-seal">§</div>
-  <div class="lc-title">Labour Codes Assistant</div>
+  <h1 class="lc-title">Labour Codes Assistant</h1>
   <p class="lc-sub">Answers grounded only in the Codes and their Central Rules, with the exact
   Section and Rule cited every time.</p>
   <div class="lc-badges">{badges}</div>
