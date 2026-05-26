@@ -1,0 +1,12 @@
+Three codes are already processed and built in. Drop the remaining PDFs here,
+then run:  python ingest.py   (then redeploy / restart).
+
+Still needed:
+  - Occupational Safety, Health & Working Conditions Code, 2020   (code)
+  - Code on Wages (Central) Rules, 2020                            (rules)
+  - Industrial Relations (Central) Rules, 2020                     (rules)
+  - Code on Social Security (Central) Rules, 2020                  (rules)
+  - OSH & WC (Central) Rules, 2020                                 (rules)
+
+Filenames don't need to be exact — keywords (wage / industrial / social / osh +
+"rule" for rules files) are matched automatically.

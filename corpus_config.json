@@ -1,0 +1,90 @@
+{
+  "_note": "This file is the single source of truth for what the assistant covers and how the documents relate. The 'replaced_acts' list is NOT loaded today; it is here so the future 'what changed' comparison feature has a ready map. Verify the replaced-act lists against your official copies before relying on them.",
+  "model": "gemini-2.5-flash",
+  "codes": [
+    {
+      "id": "wages",
+      "title": "The Code on Wages, 2019",
+      "short": "Code on Wages",
+      "year": 2019,
+      "scope": "Minimum wages, payment of wages, payment of bonus, equal remuneration, deductions, wage period, definition of 'wages', 'employee', 'worker', appropriate Government for wage matters.",
+      "statute_file": "wages_code.txt",
+      "central_rules": {
+        "title": "Code on Wages (Central) Rules, 2020",
+        "file": "wages_rules.txt"
+      },
+      "replaced_acts": [
+        "The Payment of Wages Act, 1936",
+        "The Minimum Wages Act, 1948",
+        "The Payment of Bonus Act, 1965",
+        "The Equal Remuneration Act, 1976"
+      ]
+    },
+    {
+      "id": "ir",
+      "title": "The Industrial Relations Code, 2020",
+      "short": "Industrial Relations Code",
+      "year": 2020,
+      "scope": "Trade unions, standing orders, industrial disputes, strikes and lock-outs, lay-off, retrenchment, closure, works committees, grievance redressal, negotiating unions.",
+      "statute_file": "ir_code.txt",
+      "central_rules": {
+        "title": "Industrial Relations (Central) Rules, 2020",
+        "file": "ir_rules.txt"
+      },
+      "replaced_acts": [
+        "The Trade Unions Act, 1926",
+        "The Industrial Employment (Standing Orders) Act, 1946",
+        "The Industrial Disputes Act, 1947"
+      ]
+    },
+    {
+      "id": "ss",
+      "title": "The Code on Social Security, 2020",
+      "short": "Code on Social Security",
+      "year": 2020,
+      "scope": "Provident fund, ESI/insurance, gratuity, maternity benefit, employees' compensation, pension, building & construction workers' cess, unorganised/gig/platform workers, definition of 'wages' for contribution purposes.",
+      "statute_file": "ss_code.txt",
+      "central_rules": {
+        "title": "Code on Social Security (Central) Rules, 2020",
+        "file": "ss_rules.txt"
+      },
+      "replaced_acts": [
+        "The Employees' Compensation Act, 1923",
+        "The Employees' State Insurance Act, 1948",
+        "The Employees' Provident Funds and Miscellaneous Provisions Act, 1952",
+        "The Employment Exchanges (Compulsory Notification of Vacancies) Act, 1959",
+        "The Maternity Benefit Act, 1961",
+        "The Payment of Gratuity Act, 1972",
+        "The Cine-Workers Welfare Fund Act, 1981",
+        "The Building and Other Construction Workers' Welfare Cess Act, 1996",
+        "The Unorganised Workers' Social Security Act, 2008"
+      ]
+    },
+    {
+      "id": "osh",
+      "title": "The Occupational Safety, Health and Working Conditions Code, 2020",
+      "short": "OSH & WC Code",
+      "year": 2020,
+      "scope": "Workplace safety and health, working hours, leave, welfare facilities, hazardous processes, contract labour, inter-state migrant workers, factories, mines, dock work, plantations, registration and licensing of establishments.",
+      "statute_file": "osh_code.txt",
+      "central_rules": {
+        "title": "Occupational Safety, Health and Working Conditions (Central) Rules, 2020",
+        "file": "osh_rules.txt"
+      },
+      "replaced_acts": [
+        "The Factories Act, 1948",
+        "The Mines Act, 1952",
+        "The Dock Workers (Safety, Health and Welfare) Act, 1986",
+        "The Plantations Labour Act, 1951",
+        "The Contract Labour (Regulation and Abolition) Act, 1970",
+        "The Inter-State Migrant Workmen (RE&CS) Act, 1979",
+        "The Working Journalists and other Newspaper Employees (Conditions of Service) Act, 1955",
+        "The Motor Transport Workers Act, 1961",
+        "The Sales Promotion Employees (Conditions of Service) Act, 1976",
+        "The Beedi and Cigar Workers (Conditions of Employment) Act, 1966",
+        "The Cine-Workers and Cinema Theatre Workers (Regulation of Employment) Act, 1981",
+        "The Building and Other Construction Workers (RE&CS) Act, 1996"
+      ]
+    }
+  ]
+}
