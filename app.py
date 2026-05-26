@@ -25,134 +25,243 @@ st.set_page_config(page_title="Labour Codes Assistant", page_icon="§", layout="
 # ----------------------------------------------------------------- styling
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 :root{
-  --bg:#fafafa;
+  --bg:#ffffff;
+  --bg-subtle:#fafafa;
+  --bg-soft:#f5f5f5;
   --card:#ffffff;
-  --border:#e2e8f0;
-  --text:#0f172a;
-  --muted:#64748b;
-  --accent:#2563eb;
-  --accent-soft:#eff6ff;
+  --border:#ededed;
+  --border-strong:#d4d4d4;
+  --text:#0a0a0a;
+  --text-muted:#525252;
+  --text-subtle:#737373;
+  --shadow-sm:0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md:0 4px 16px -4px rgba(0,0,0,0.06);
+  --shadow-lg:0 12px 32px -8px rgba(0,0,0,0.08);
+  --ease:cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+@keyframes fadeInUp{
+  from{opacity:0;transform:translateY(10px);}
+  to{opacity:1;transform:translateY(0);}
+}
+@keyframes fadeIn{
+  from{opacity:0;}
+  to{opacity:1;}
+}
+@keyframes shimmer{
+  0%,100%{opacity:0.55;}
+  50%{opacity:1;}
+}
+
+*{box-sizing:border-box;}
+
 .stApp{
-  background:var(--bg);
+  background:
+    radial-gradient(900px 500px at 50% -12%, rgba(0,0,0,0.028), transparent 60%),
+    var(--bg);
   color:var(--text);
   font-family:'Inter',system-ui,-apple-system,sans-serif;
   -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  font-feature-settings:'cv11','ss01';
+  letter-spacing:-0.005em;
 }
-/* hide default chrome */
+
+/* hide chrome */
 [data-testid="stHeader"],[data-testid="stToolbar"],#MainMenu,footer{display:none!important;}
-.block-container{max-width:760px;padding-top:3rem!important;padding-bottom:6rem;}
-h1,h2,h3,h4{color:var(--text);font-family:'Inter',sans-serif;letter-spacing:-0.02em;}
+
+.block-container{
+  max-width:720px;
+  padding-top:4.5rem!important;
+  padding-bottom:7rem;
+}
+
+h1,h2,h3,h4{color:var(--text);font-family:'Inter',sans-serif;}
 
 /* hero */
-.lc-hero{text-align:left;margin:0 0 1.5rem;}
+.lc-hero{
+  margin:0 0 2rem;
+  animation:fadeInUp 0.7s var(--ease) both;
+}
 .lc-title{
-  font-size:30px;
+  font-size:42px;
   font-weight:700;
   color:var(--text);
-  margin:0 0 0.5rem;
-  letter-spacing:-0.025em;
-  line-height:1.2;
+  margin:0 0 0.75rem;
+  letter-spacing:-0.04em;
+  line-height:1.05;
 }
 .lc-sub{
-  color:var(--muted);
-  font-size:15px;
-  margin:0;
-  max-width:560px;
+  color:var(--text-muted);
+  font-size:16px;
   line-height:1.55;
+  margin:0;
+  max-width:540px;
+  font-weight:400;
 }
-.lc-badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:1.25rem;}
+.lc-badges{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  margin-top:1.75rem;
+}
 .lc-badge{
-  font-size:12px;
+  font-size:11.5px;
   font-weight:500;
-  color:var(--muted);
-  background:var(--card);
+  color:var(--text-muted);
+  background:var(--bg);
   border:1px solid var(--border);
-  padding:4px 10px;
-  border-radius:6px;
-  letter-spacing:0;
+  padding:5px 11px;
+  border-radius:999px;
+  transition:all 0.25s var(--ease);
 }
-.lc-rule{height:1px;background:var(--border);margin:1.5rem 0;}
+.lc-badge:hover{
+  border-color:var(--border-strong);
+  color:var(--text);
+  transform:translateY(-1px);
+}
+.lc-rule{
+  height:1px;
+  background:linear-gradient(90deg,transparent,var(--border) 15%,var(--border) 85%,transparent);
+  margin:2rem 0 1.5rem;
+  animation:fadeIn 1s var(--ease) 0.3s both;
+}
 .lc-eyebrow{
-  color:var(--muted);
-  font-size:13px;
+  font-size:11.5px;
   font-weight:500;
-  margin:0.5rem 0 0.75rem;
-  letter-spacing:0;
-  text-transform:none;
-  text-align:left;
+  color:var(--text-subtle);
+  letter-spacing:0.12em;
+  text-transform:uppercase;
+  margin:0 0 1rem;
+  animation:fadeInUp 0.6s var(--ease) 0.1s both;
 }
 
-/* notices */
+/* notice */
 .lc-warn{
   border:1px solid var(--border);
-  background:var(--accent-soft);
-  border-radius:8px;
-  padding:12px 16px;
+  background:var(--bg-subtle);
+  border-radius:12px;
+  padding:14px 18px;
   color:var(--text);
   font-size:14px;
-  text-align:left;
-  margin-bottom:1rem;
+  line-height:1.5;
+  margin-bottom:1.25rem;
+  box-shadow:var(--shadow-sm);
+  animation:fadeInUp 0.6s var(--ease) both;
 }
 
 /* chat */
-[data-testid="stChatMessage"]{background:transparent;border:none;padding:0.5rem 0;}
-[data-testid="stChatMessageContent"]{font-size:15px;line-height:1.6;color:var(--text);}
+[data-testid="stChatMessage"]{
+  background:transparent;
+  border:none;
+  padding:0.4rem 0;
+  animation:fadeInUp 0.5s var(--ease) both;
+}
+[data-testid="stChatMessageContent"]{
+  font-size:15.5px;
+  line-height:1.65;
+  color:var(--text);
+}
+[data-testid="stChatMessageContent"] p{margin:0 0 0.75rem;}
+[data-testid="stChatMessageContent"] p:last-child{margin-bottom:0;}
+[data-testid="stChatMessageContent"] strong{color:var(--text);font-weight:600;}
 [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]){
   background:var(--card);
   border:1px solid var(--border);
-  border-radius:10px;
-  padding:14px 18px;
+  border-radius:16px;
+  padding:20px 22px;
+  box-shadow:var(--shadow-sm);
+  transition:box-shadow 0.35s var(--ease);
 }
-[data-testid="stChatMessageContent"] strong{color:var(--text);font-weight:600;}
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]):hover{
+  box-shadow:var(--shadow-md);
+}
 .lc-src{
-  color:var(--muted);
-  font-size:12px;
+  color:var(--text-subtle);
+  font-size:11px;
   font-weight:500;
-  letter-spacing:0;
-  text-transform:none;
-  margin-bottom:6px;
+  letter-spacing:0.1em;
+  text-transform:uppercase;
+  margin-bottom:10px;
 }
 
-/* buttons / chips */
+/* buttons */
 .stButton>button{
   background:var(--card);
   color:var(--text);
   border:1px solid var(--border);
-  border-radius:8px;
-  padding:10px 14px;
-  font-size:14px;
+  border-radius:12px;
+  padding:14px 18px;
+  font-size:14.5px;
   font-weight:500;
-  transition:0.15s ease;
+  font-family:'Inter',sans-serif;
+  transition:all 0.25s var(--ease);
   width:100%;
   text-align:left;
   line-height:1.4;
+  box-shadow:var(--shadow-sm);
+  cursor:pointer;
 }
 .stButton>button:hover{
-  background:var(--accent-soft);
-  color:var(--accent);
-  border-color:var(--accent);
+  background:var(--bg-subtle);
+  border-color:var(--text);
+  transform:translateY(-2px);
+  box-shadow:var(--shadow-md);
+}
+.stButton>button:active{
+  transform:translateY(-1px);
+  box-shadow:var(--shadow-sm);
+}
+.stButton>button:focus-visible{
+  outline:2px solid var(--text);
+  outline-offset:2px;
 }
 
 /* chat input */
 [data-testid="stChatInput"]{
   background:var(--card);
   border:1px solid var(--border);
-  border-radius:10px;
+  border-radius:16px;
+  box-shadow:var(--shadow-md);
+  transition:all 0.25s var(--ease);
 }
-[data-testid="stChatInput"] textarea{color:var(--text)!important;font-size:15px;}
-[data-testid="stChatInput"] textarea::placeholder{color:var(--muted);}
-[data-testid="stBottomBlockContainer"]{background:var(--bg);}
+[data-testid="stChatInput"]:focus-within{
+  border-color:var(--text);
+  box-shadow:0 0 0 3px rgba(0,0,0,0.04),var(--shadow-lg);
+}
+[data-testid="stChatInput"] textarea{
+  color:var(--text)!important;
+  font-size:15.5px;
+  font-family:'Inter',sans-serif!important;
+}
+[data-testid="stChatInput"] textarea::placeholder{color:var(--text-subtle);}
+[data-testid="stBottomBlockContainer"]{background:transparent;}
+
 .lc-foot{
-  color:var(--muted);
-  font-size:12px;
+  color:var(--text-subtle);
+  font-size:11.5px;
   text-align:center;
-  font-style:normal;
-  margin-top:1rem;
+  margin-top:2rem;
+  font-weight:400;
+  letter-spacing:0.01em;
 }
+
+/* spinner */
+[data-testid="stSpinner"]{animation:shimmer 1.5s ease-in-out infinite;}
+[data-testid="stSpinner"] > div > div{
+  border-color:var(--border)!important;
+  border-top-color:var(--text)!important;
+}
+
+::selection{background:var(--text);color:var(--bg);}
+
+::-webkit-scrollbar{width:8px;height:8px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:999px;}
+::-webkit-scrollbar-thumb:hover{background:var(--text-subtle);}
 </style>
 """, unsafe_allow_html=True)
 
@@ -331,9 +440,10 @@ def ask(query, forced_code=None, label=None):
 badges = "".join(f'<span class="lc-badge">{e["meta"]["short"]}</span>' for e in LOADED.values())
 st.markdown(f"""
 <div class="lc-hero">
+  <div class="lc-eyebrow">Indian Labour Codes · Legal Reference</div>
   <h1 class="lc-title">Labour Codes Assistant</h1>
-  <p class="lc-sub">Answers grounded only in the Codes and their Central Rules, with the exact
-  Section and Rule cited every time.</p>
+  <p class="lc-sub">Answers grounded in the four labour Codes and their Central Rules, with the
+  exact Section and Rule cited every time.</p>
   <div class="lc-badges">{badges}</div>
 </div>
 <div class="lc-rule"></div>
