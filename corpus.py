@@ -17,11 +17,38 @@ STOP = set("""a an the of to in for on and or by with as is are be this that any
 which under section sub clause shall means may not no it its his he him under into
 from per cent rupees within where when been being under code act rules rule""".split())
 
+# ── Synonym expansion for better recall ──────────────────────────────────────
+# Maps a canonical term to a list of related words that should expand the search.
+SYNONYMS: dict[str, list[str]] = {
+    "retrench":        ["retrenchment", "retrenched", "retrenching", "layoff", "lay-off"],
+    "terminate":       ["termination", "terminated", "dismissal", "dismiss", "removal", "discharge"],
+    "wage":            ["wages", "remuneration", "salary", "pay", "payment", "earnings"],
+    "employee":        ["employees", "worker", "workers", "workman", "workmen", "labourer"],
+    "employer":        ["employers", "principal employer", "management", "establishment"],
+    "bonus":           ["bonuses", "incentive", "ex-gratia", "performance pay"],
+    "gratuity":        ["gratuities", "terminal benefit", "long service"],
+    "strike":          ["strikes", "striking", "walkout", "work stoppage", "cessation of work"],
+    "lockout":         ["lock-out", "lock out", "closure"],
+    "union":           ["unions", "trade union", "collective bargaining", "negotiating union"],
+    "contract":        ["contractor", "contractual", "outsourced", "contract labour"],
+    "maternity":       ["maternal", "maternity benefit", "childbirth", "pregnancy"],
+    "provident":       ["provident fund", "pf", "epf", "employees provident fund"],
+    "insurance":       ["esi", "state insurance", "employees state insurance"],
+    "dispute":         ["disputes", "industrial dispute", "grievance", "conciliation"],
+    "compensation":    ["compensate", "damages", "liability", "compensation"],
+    "notice":          ["notice period", "notification", "intimation"],
+    "hours":           ["working hours", "overtime", "shift", "rest interval"],
+    "leave":           ["annual leave", "sick leave", "casual leave", "earned leave"],
+    "standing order":  ["certified standing orders", "service conditions"],
+    "factory":         ["factories", "manufacturing", "industrial premises"],
+    "welfare":         ["welfare officer", "canteen", "crèche", "facilities"],
+    "migrant":         ["inter-state migrant", "migrant worker", "migrant workman"],
+}
 
-# ----------------------------------------------------------------- parsing
+
+# ── Parsing helpers ───────────────────────────────────────────────────────────
 def _split_numbered(text):
-    """Split a block into strictly-increasing top-level numbered items (1., 2., 3.).
-    Strictly-increasing filtering ignores stray '12.' cross-references and list noise."""
+    """Split a block into strictly-increasing top-level numbered items."""
     cands = [(int(m.group(1)), m.start()) for m in re.finditer(r"(?m)^\s{0,4}(\d{1,3})\.\s", text)]
     items, expected, open_at, open_num = [], 1, None, None
     for num, pos in cands:
@@ -50,7 +77,7 @@ def _preview(s, n=150):
 
 
 def parse_doc(text, kind):
-    """kind: 'code' uses 'Section N'; 'rules' uses 'Rule N'."""
+    """kind: 'code' → 'Section N'; 'rules' → 'Rule N'."""
     label = "Section" if kind == "code" else "Rule"
     sched_match = re.search(r"THE\s+[A-Z]+\s+SCHEDULE", text)
     body = text[: sched_match.start()] if sched_match else text
@@ -64,7 +91,7 @@ def parse_doc(text, kind):
     return chunks
 
 
-# ----------------------------------------------------------------- loading
+# ── Loading ───────────────────────────────────────────────────────────────────
 def _read(name):
     p = PROCESSED / name
     return p.read_text(encoding="utf-8") if p.exists() else None
@@ -72,13 +99,13 @@ def _read(name):
 
 def load_corpus():
     cfg = json.loads((ROOT / "corpus_config.json").read_text())
-    corpus = {}
+    corpus: dict = {}
     for c in cfg["codes"]:
         statute = _read(c["statute_file"])
         rules = _read(c["central_rules"]["file"])
         if not statute and not rules:
             continue
-        entry = {"meta": c, "chunks": []}
+        entry: dict = {"meta": c, "chunks": []}
         if statute:
             for ch in parse_doc(statute, "code"):
                 ch["source"] = c["title"]
@@ -91,31 +118,38 @@ def load_corpus():
     return cfg, corpus
 
 
-# ----------------------------------------------------------------- retrieval
-def _terms(q):
-    return [w for w in re.findall(r"[a-z]{3,}", q.lower()) if w not in STOP]
+# ── Retrieval ─────────────────────────────────────────────────────────────────
+def _terms(q: str) -> list[str]:
+    """Tokenise query and expand with synonyms for better recall."""
+    base = [w for w in re.findall(r"[a-z]{3,}", q.lower()) if w not in STOP]
+    expanded: set[str] = set(base)
+    for term in base:
+        for canonical, syns in SYNONYMS.items():
+            if term == canonical or term in syns:
+                expanded.add(canonical)
+                expanded.update(syns)
+    return list(expanded)
 
 
-def search(entry, query, k=12):
+def search(entry: dict, query: str, k: int = 12) -> list[dict]:
     """Return up to k chunks from one code+rules most relevant to the query."""
     terms = _terms(query)
-    explicit = set(int(n) for n in re.findall(r"(?:section|rule)\s+(\d{1,3})", query.lower()))
+    explicit = {int(n) for n in re.findall(r"(?:section|rule)\s+(\d{1,3})", query.lower())}
     definitional = bool(re.search(r"\b(defin|meaning|means|what is|who is)\b", query.lower()))
 
-    scored = []
+    scored: list[tuple[int, dict]] = []
     for ch in entry["chunks"]:
         low = ch["text"].lower()
         score = sum(low.count(t) for t in terms)
-        score += 3 * sum(1 for t in terms if t in ch["preview"].lower())  # title/opening boost
+        score += 3 * sum(1 for t in terms if t in ch["preview"].lower())
         if ch["num"] in explicit:
             score += 100
-        if definitional and ch["num"] == 2:           # definitions live in Section/Rule 2
+        if definitional and ch["num"] == 2:
             score += 8
         if score:
             scored.append((score, ch))
     scored.sort(key=lambda x: x[0], reverse=True)
     picks = [ch for _, ch in scored[:k]]
-    # always include the definitions section if nothing else surfaced it
     if definitional and not any(c["num"] == 2 for c in picks):
         d = next((c for c in entry["chunks"] if c["num"] == 2), None)
         if d:
@@ -123,9 +157,40 @@ def search(entry, query, k=12):
     return picks
 
 
-def render_chunks(picks):
-    return "\n\n".join(f"===== {c['source']} — {c['label']} =====\n{c['text']}" for c in picks)
+def search_all(corpus_dict: dict, query: str, k: int = 10) -> dict:
+    """
+    Search every loaded code simultaneously.
+
+    Returns:
+        dict: { code_id -> {"chunks": [...], "found": bool, "meta": {...}} }
+    """
+    return {
+        cid: {"chunks": chunks, "found": bool(chunks), "meta": entry["meta"]}
+        for cid, entry in corpus_dict.items()
+        for chunks in [search(entry, query, k=k)]
+    }
 
 
-def toc_line(c):
+def render_chunks(picks: list[dict]) -> str:
+    return "\n\n".join(
+        f"===== {c['source']} — {c['label']} =====\n{c['text']}" for c in picks
+    )
+
+
+def render_all_results(all_results: dict) -> str:
+    """
+    Build the grounding text sent to the LLM:
+    - Codes with hits → their chunks, grouped under a clear heading.
+    - Codes with no hits → omitted from grounding (noted separately via no_provision list).
+    """
+    parts = []
+    for cid, res in all_results.items():
+        if res["found"]:
+            chunks_text = render_chunks(res["chunks"])
+            sep = "=" * 64
+            parts.append(f"{sep}\nCODE: {res['meta']['title']}\n{sep}\n{chunks_text}")
+    return "\n\n".join(parts)
+
+
+def toc_line(c: dict) -> str:
     return f"{c['label']}: {c['preview']}"
