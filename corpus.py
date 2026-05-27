@@ -8,6 +8,7 @@ every answer stays small, fast, and cheap, and the model cites from real text.
 """
 import json
 import re
+from difflib import get_close_matches
 from pathlib import Path
 
 ROOT = Path(__file__).parent
@@ -18,12 +19,15 @@ which under section sub clause shall means may not no it its his he him under in
 from per cent rupees within where when been being under code act rules rule""".split())
 
 # ── Synonym expansion for better recall ──────────────────────────────────────
-# Maps a canonical term to a list of related words that should expand the search.
 SYNONYMS: dict[str, list[str]] = {
     "retrench":        ["retrenchment", "retrenched", "retrenching", "layoff", "lay-off"],
+    "retrenchment":    ["retrench", "retrenched", "retrenching", "layoff", "lay-off"],
     "terminate":       ["termination", "terminated", "dismissal", "dismiss", "removal", "discharge"],
+    "termination":     ["terminate", "terminated", "dismissal", "dismiss", "removal", "discharge"],
     "wage":            ["wages", "remuneration", "salary", "pay", "payment", "earnings"],
+    "wages":           ["wage", "remuneration", "salary", "pay", "payment", "earnings"],
     "employee":        ["employees", "worker", "workers", "workman", "workmen", "labourer"],
+    "employees":       ["employee", "worker", "workers", "workman", "workmen", "labourer"],
     "employer":        ["employers", "principal employer", "management", "establishment"],
     "bonus":           ["bonuses", "incentive", "ex-gratia", "performance pay"],
     "gratuity":        ["gratuities", "terminal benefit", "long service"],
@@ -43,7 +47,56 @@ SYNONYMS: dict[str, list[str]] = {
     "factory":         ["factories", "manufacturing", "industrial premises"],
     "welfare":         ["welfare officer", "canteen", "crèche", "facilities"],
     "migrant":         ["inter-state migrant", "migrant worker", "migrant workman"],
+    "layoff":          ["lay-off", "lay off", "retrenchment", "retrench"],
+    "dismiss":         ["dismissal", "dismissed", "termination", "terminate", "discharge"],
+    "salary":          ["wages", "wage", "remuneration", "pay", "payment"],
+    "workman":         ["workmen", "worker", "workers", "employee", "employees"],
+    "apprentice":      ["apprenticeship", "trainee", "training"],
+    "hazardous":       ["dangerous", "safety", "health risk"],
+    "penalty":         ["fine", "punishment", "offence", "contravention"],
 }
+
+# ── Legal vocabulary for typo correction ─────────────────────────────────────
+LEGAL_VOCABULARY = [
+    "retrenchment", "termination", "dismissal", "resignation", "discharge",
+    "wages", "salary", "remuneration", "earnings", "payment",
+    "gratuity", "bonus", "provident", "insurance", "compensation",
+    "strike", "lockout", "dispute", "conciliation", "arbitration",
+    "overtime", "maternity", "paternity", "leave", "holiday",
+    "notice", "contractor", "contract", "outsourcing",
+    "union", "collective", "bargaining", "negotiation",
+    "welfare", "migrant", "factory", "establishment",
+    "standing", "order", "apprentice", "hazardous", "safety",
+    "health", "inspection", "penalty", "registration", "license",
+    "workman", "employee", "employer", "layoff", "closure",
+    "definition", "obligation", "compliance", "procedure",
+]
+
+
+# ── Typo / spelling correction ────────────────────────────────────────────────
+def correct_query(q: str) -> tuple[str, list[tuple[str, str]]]:
+    """
+    Detect and correct likely misspellings of legal terms.
+
+    Returns:
+        (corrected_query, [(original_word, corrected_word), ...])
+    """
+    tokens = q.split()
+    corrections: list[tuple[str, str]] = []
+    corrected_tokens: list[str] = []
+
+    for token in tokens:
+        clean = re.sub(r"[^a-z]", "", token.lower())
+        # Only attempt correction on words likely to be legal terms
+        if len(clean) >= 5 and clean not in STOP and clean not in LEGAL_VOCABULARY:
+            matches = get_close_matches(clean, LEGAL_VOCABULARY, n=1, cutoff=0.72)
+            if matches and matches[0] != clean:
+                corrections.append((token, matches[0]))
+                corrected_tokens.append(matches[0])
+                continue
+        corrected_tokens.append(token)
+
+    return " ".join(corrected_tokens), corrections
 
 
 # ── Parsing helpers ───────────────────────────────────────────────────────────
@@ -120,20 +173,40 @@ def load_corpus():
 
 # ── Retrieval ─────────────────────────────────────────────────────────────────
 def _terms(q: str) -> list[str]:
-    """Tokenise query and expand with synonyms for better recall."""
+    """
+    Tokenise query and expand with synonyms for better recall.
+    Also handles root forms (e.g. 'retrench' expands to all retrenchment variants).
+    """
     base = [w for w in re.findall(r"[a-z]{3,}", q.lower()) if w not in STOP]
     expanded: set[str] = set(base)
     for term in base:
+        # Direct synonym lookup
+        if term in SYNONYMS:
+            expanded.update(SYNONYMS[term])
+        # Check if term is a value (synonym) of any canonical key
         for canonical, syns in SYNONYMS.items():
-            if term == canonical or term in syns:
+            if term in syns:
                 expanded.add(canonical)
                 expanded.update(syns)
+        # Root-form matching: if term is a prefix of any legal vocab word (≥5 chars)
+        if len(term) >= 5:
+            for vocab_word in LEGAL_VOCABULARY:
+                if vocab_word.startswith(term) and vocab_word != term:
+                    expanded.add(vocab_word)
+                    if vocab_word in SYNONYMS:
+                        expanded.update(SYNONYMS[vocab_word])
     return list(expanded)
 
 
-def search(entry: dict, query: str, k: int = 5, min_score: int = 2) -> list[dict]:
-    """Return up to k chunks from one code+rules most relevant to the query.
-    Chunks scoring below min_score are excluded to keep grounding tight."""
+# ── Score threshold — raised from 2 to 5 to eliminate spurious "found" hits ──
+_MIN_SCORE = 5
+
+
+def search(entry: dict, query: str, k: int = 5, min_score: int = _MIN_SCORE) -> list[dict]:
+    """
+    Return up to k chunks from one code+rules most relevant to the query.
+    Chunks scoring below min_score are excluded to keep grounding tight.
+    """
     terms = _terms(query)
     explicit = {int(n) for n in re.findall(r"(?:section|rule)\s+(\d{1,3})", query.lower())}
     definitional = bool(re.search(r"\b(defin|meaning|means|what is|who is)\b", query.lower()))
@@ -149,6 +222,7 @@ def search(entry: dict, query: str, k: int = 5, min_score: int = 2) -> list[dict
             score += 8
         if score >= min_score:
             scored.append((score, ch))
+
     scored.sort(key=lambda x: x[0], reverse=True)
     picks = [ch for _, ch in scored[:k]]
     if definitional and not any(c["num"] == 2 for c in picks):
@@ -172,7 +246,8 @@ def search_all(corpus_dict: dict, query: str, k: int = 10) -> dict:
     }
 
 
-_MAX_CHUNK_CHARS = 700   # hard cap per chunk to stay within token budget
+# ── Chunk size: raised from 700 → 3 000 chars so full provisions reach the LLM ─
+_MAX_CHUNK_CHARS = 3000
 
 
 def _trim(text: str) -> str:
@@ -180,7 +255,6 @@ def _trim(text: str) -> str:
     if len(text) <= _MAX_CHUNK_CHARS:
         return text
     cut = text[:_MAX_CHUNK_CHARS]
-    # try to end at last full sentence
     last_stop = max(cut.rfind(". "), cut.rfind(".\n"))
     return (cut[:last_stop + 1] if last_stop > _MAX_CHUNK_CHARS // 2 else cut) + " [...]"
 
