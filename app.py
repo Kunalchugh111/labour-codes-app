@@ -19,8 +19,8 @@ import corpus
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 CEREBRAS_URL = "https://api.cerebras.ai/v1/chat/completions"
-MODEL_PRIMARY  = "qwen-3-235b-a22b-instruct-2507"
-MODEL_FALLBACK = "gpt-oss-120b"
+MODEL_PRIMARY  = "gpt-oss-120b"                        # Production — stable
+MODEL_FALLBACK = "qwen-3-235b-a22b-instruct-2507"      # Preview — try if primary fails
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Labour Codes", page_icon="⚖", layout="centered")
@@ -377,13 +377,20 @@ def _stream(messages: list[dict], system: str, model: str = MODEL_PRIMARY):
     body  = {"model": model, "messages": msgs, "max_tokens": 2048,
              "temperature": 0.15, "stream": True}
 
-    def _iter(m):
+    def _iter(m, is_retry=False):
         body["model"] = m
         with requests.post(CEREBRAS_URL, headers=headers, json=body,
                            timeout=120, stream=True) as r:
             if r.status_code == 429:
-                yield ("⚠️  Rate limit reached — please wait a moment and try again. "
-                       "(Free tier: 5 req/min, 150/hour)")
+                if not is_retry:
+                    yield "\n_⏳ Token rate limit hit — retrying in 15 seconds…_\n\n"
+                    import time; time.sleep(15)
+                    yield from _iter(MODEL_FALLBACK, is_retry=True)
+                else:
+                    yield (
+                        "⚠️  **Rate limit reached.** The free tier allows 30,000 tokens/minute. "
+                        "Please wait ~60 seconds before asking again."
+                    )
                 return
             r.raise_for_status()
             in_think = False
@@ -566,7 +573,7 @@ if st.session_state.pending:
 
     # Search all codes in parallel
     with st.spinner("Searching the codes…"):
-        all_results = corpus.search_all(LOADED, q, k=10)
+        all_results = corpus.search_all(LOADED, q, k=4)
 
     sources      = [res["meta"]["short"] for res in all_results.values() if res["found"]]
     no_provision = [res["meta"]["short"] for res in all_results.values() if not res["found"]]
