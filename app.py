@@ -2,501 +2,615 @@
 app.py — Labour Codes Assistant (Streamlit).
 
 Pipeline per question:
-  1) ROUTE  (Gemini): decide which code, or ask "which code?" when a term is
-            defined differently across codes (e.g. "wages").
-  2) RETRIEVE (local): pull only the relevant Sections/Rules from that code.
-  3) ANSWER (Gemini): answer strictly from those slices, citing exact Section/Rule.
+  1) SEARCH ALL  — search every loaded code simultaneously (no routing, no dead ends).
+  2) RENDER      — grounding text from codes that have hits; no-provision list for those that don't.
+  3) STREAM      — single Cerebras call that answers from grounding, cites exact Sections/Rules,
+                   and explicitly states which codes have no provision on the topic.
 
-Keys live in st.secrets (server-side) and are rotated automatically.
+Keys live in st.secrets (server-side):  CEREBRAS_API_KEY
 """
-import itertools
-import json
-import threading
 
+import json
+import re
 import requests
 import streamlit as st
 
 import corpus
 
-API_ROOT = "https://generativelanguage.googleapis.com/v1beta/models"
+# ── Constants ─────────────────────────────────────────────────────────────────
+CEREBRAS_URL = "https://api.cerebras.ai/v1/chat/completions"
+MODEL_PRIMARY  = "qwen-3-235b-a22b-instruct-2507"
+MODEL_FALLBACK = "gpt-oss-120b"
 
-st.set_page_config(page_title="Labour Codes Assistant", page_icon="§", layout="centered")
+# ── Page config ───────────────────────────────────────────────────────────────
+st.set_page_config(page_title="Labour Codes", page_icon="⚖", layout="centered")
 
-# ----------------------------------------------------------------- styling
+# ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;0,9..144,700;1,9..144,300&family=DM+Sans:wght@400;500;600&display=swap');
 
-:root{
-  --bg:#ffffff;
-  --bg-subtle:#fafafa;
-  --bg-soft:#f5f5f5;
-  --card:#ffffff;
-  --border:#ededed;
-  --border-strong:#d4d4d4;
-  --text:#0a0a0a;
-  --text-muted:#525252;
-  --text-subtle:#737373;
-  --shadow-sm:0 1px 2px rgba(0,0,0,0.04);
-  --shadow-md:0 4px 16px -4px rgba(0,0,0,0.06);
-  --shadow-lg:0 12px 32px -8px rgba(0,0,0,0.08);
-  --ease:cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@keyframes fadeInUp{
-  from{opacity:0;transform:translateY(10px);}
-  to{opacity:1;transform:translateY(0);}
-}
-@keyframes fadeIn{
-  from{opacity:0;}
-  to{opacity:1;}
-}
-@keyframes shimmer{
-  0%,100%{opacity:0.55;}
-  50%{opacity:1;}
+:root {
+  --blue:         #1E40AF;
+  --blue-dark:    #1e3a8a;
+  --blue-mid:     #3b82f6;
+  --blue-light:   #eff6ff;
+  --blue-border:  #bfdbfe;
+  --bg:           #ffffff;
+  --bg-subtle:    #f8fafc;
+  --card:         #ffffff;
+  --border:       #e2e8f0;
+  --border-s:     #cbd5e1;
+  --text:         #0f172a;
+  --text-2:       #334155;
+  --text-3:       #64748b;
+  --text-4:       #94a3b8;
+  --green:        #16a34a;
+  --green-bg:     #f0fdf4;
+  --shadow-sm:    0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md:    0 4px 20px -4px rgba(30,64,175,0.10);
+  --shadow-lg:    0 12px 40px -8px rgba(30,64,175,0.14);
+  --r:            cubic-bezier(0.16,1,0.3,1);
 }
 
-*{box-sizing:border-box;}
+@keyframes fadeUp   { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+@keyframes fadeIn   { from{opacity:0} to{opacity:1} }
+@keyframes shimmer  { 0%,100%{opacity:.5} 50%{opacity:1} }
+@keyframes slideIn  { from{opacity:0;transform:translateX(-6px)} to{opacity:1;transform:translateX(0)} }
 
-.stApp{
-  background:
-    radial-gradient(900px 500px at 50% -12%, rgba(0,0,0,0.028), transparent 60%),
-    var(--bg);
-  color:var(--text);
-  font-family:'Inter',system-ui,-apple-system,sans-serif;
-  -webkit-font-smoothing:antialiased;
-  -moz-osx-font-smoothing:grayscale;
-  font-feature-settings:'cv11','ss01';
-  letter-spacing:-0.005em;
+* { box-sizing: border-box; }
+
+/* ── App shell ── */
+.stApp {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
-
-/* hide chrome */
-[data-testid="stHeader"],[data-testid="stToolbar"],#MainMenu,footer{display:none!important;}
-
-.block-container{
-  max-width:720px;
-  padding-top:4.5rem!important;
-  padding-bottom:7rem;
+[data-testid="stHeader"],[data-testid="stToolbar"],#MainMenu,footer { display:none!important; }
+.block-container {
+  max-width: 780px;
+  padding-top: 3.5rem !important;
+  padding-bottom: 8rem;
 }
 
-h1,h2,h3,h4{color:var(--text);font-family:'Inter',sans-serif;}
+/* ── Hero ── */
+.lc-hero { margin: 0 0 2.75rem; animation: fadeUp .7s var(--r) both; }
 
-/* hero */
-.lc-hero{
-  margin:0 0 2rem;
-  animation:fadeInUp 0.7s var(--ease) both;
+.lc-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--blue);
+  background: var(--blue-light);
+  border: 1px solid var(--blue-border);
+  padding: 4px 13px 4px 10px;
+  border-radius: 999px;
+  margin-bottom: .85rem;
 }
-.lc-title{
-  font-size:42px;
-  font-weight:700;
-  color:var(--text);
-  margin:0 0 0.75rem;
-  letter-spacing:-0.04em;
-  line-height:1.05;
-}
-.lc-sub{
-  color:var(--text-muted);
-  font-size:16px;
-  line-height:1.55;
-  margin:0;
-  max-width:540px;
-  font-weight:400;
-}
-.lc-badges{
-  display:flex;
-  flex-wrap:wrap;
-  gap:6px;
-  margin-top:1.75rem;
-}
-.lc-badge{
-  font-size:11.5px;
-  font-weight:500;
-  color:var(--text-muted);
-  background:var(--bg);
-  border:1px solid var(--border);
-  padding:5px 11px;
-  border-radius:999px;
-  transition:all 0.25s var(--ease);
-}
-.lc-badge:hover{
-  border-color:var(--border-strong);
-  color:var(--text);
-  transform:translateY(-1px);
-}
-.lc-rule{
-  height:1px;
-  background:linear-gradient(90deg,transparent,var(--border) 15%,var(--border) 85%,transparent);
-  margin:2rem 0 1.5rem;
-  animation:fadeIn 1s var(--ease) 0.3s both;
-}
-.lc-eyebrow{
-  font-size:11.5px;
-  font-weight:500;
-  color:var(--text-subtle);
-  letter-spacing:0.12em;
-  text-transform:uppercase;
-  margin:0 0 1rem;
-  animation:fadeInUp 0.6s var(--ease) 0.1s both;
+.lc-pill-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--blue-mid);
+  animation: shimmer 2s ease-in-out infinite;
 }
 
-/* notice */
-.lc-warn{
-  border:1px solid var(--border);
-  background:var(--bg-subtle);
-  border-radius:12px;
-  padding:14px 18px;
-  color:var(--text);
-  font-size:14px;
-  line-height:1.5;
-  margin-bottom:1.25rem;
-  box-shadow:var(--shadow-sm);
-  animation:fadeInUp 0.6s var(--ease) both;
+.lc-title {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 44px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 .55rem;
+  letter-spacing: -.03em;
+  line-height: 1.08;
+}
+.lc-title em { font-style: italic; color: var(--blue); font-weight: 300; }
+
+.lc-sub {
+  font-size: 15.5px;
+  color: var(--text-3);
+  line-height: 1.65;
+  margin: 0;
+  max-width: 510px;
+  font-weight: 400;
 }
 
-/* chat */
-[data-testid="stChatMessage"]{
-  background:transparent;
-  border:none;
-  padding:0.4rem 0;
-  animation:fadeInUp 0.5s var(--ease) both;
+.lc-codes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 1.4rem;
 }
-[data-testid="stChatMessageContent"]{
-  font-size:15.5px;
-  line-height:1.65;
-  color:var(--text);
-}
-[data-testid="stChatMessageContent"] p{margin:0 0 0.75rem;}
-[data-testid="stChatMessageContent"] p:last-child{margin-bottom:0;}
-[data-testid="stChatMessageContent"] strong{color:var(--text);font-weight:600;}
-[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]){
-  background:var(--card);
-  border:1px solid var(--border);
-  border-radius:16px;
-  padding:20px 22px;
-  box-shadow:var(--shadow-sm);
-  transition:box-shadow 0.35s var(--ease);
-}
-[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]):hover{
-  box-shadow:var(--shadow-md);
-}
-.lc-src{
-  color:var(--text-subtle);
-  font-size:11px;
-  font-weight:500;
-  letter-spacing:0.1em;
-  text-transform:uppercase;
-  margin-bottom:10px;
+.lc-code-chip {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--blue-dark);
+  background: var(--blue-light);
+  border: 1px solid var(--blue-border);
+  padding: 5px 14px;
+  border-radius: 8px;
+  transition: all .2s var(--r);
 }
 
-/* buttons */
-.stButton>button{
-  background:var(--card);
-  color:var(--text);
-  border:1px solid var(--border);
-  border-radius:12px;
-  padding:14px 18px;
-  font-size:14.5px;
-  font-weight:500;
-  font-family:'Inter',sans-serif;
-  transition:all 0.25s var(--ease);
-  width:100%;
-  text-align:left;
-  line-height:1.4;
-  box-shadow:var(--shadow-sm);
-  cursor:pointer;
-}
-.stButton>button:hover{
-  background:var(--bg-subtle);
-  border-color:var(--text);
-  transform:translateY(-2px);
-  box-shadow:var(--shadow-md);
-}
-.stButton>button:active{
-  transform:translateY(-1px);
-  box-shadow:var(--shadow-sm);
-}
-.stButton>button:focus-visible{
-  outline:2px solid var(--text);
-  outline-offset:2px;
+.lc-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border) 15%, var(--border) 85%, transparent);
+  margin: 2rem 0 1.75rem;
 }
 
-/* chat input */
-[data-testid="stChatInput"]{
-  background:var(--card);
-  border:1px solid var(--border);
-  border-radius:16px;
-  box-shadow:var(--shadow-md);
-  transition:all 0.25s var(--ease);
+/* ── Alert ── */
+.lc-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--blue-light);
+  border: 1px solid var(--blue-border);
+  border-radius: 10px;
+  padding: 13px 16px;
+  margin-bottom: 1.25rem;
+  font-size: 13.5px;
+  color: var(--blue-dark);
+  line-height: 1.55;
 }
-[data-testid="stChatInput"]:focus-within{
-  border-color:var(--text);
-  box-shadow:0 0 0 3px rgba(0,0,0,0.04),var(--shadow-lg);
-}
-[data-testid="stChatInput"] textarea{
-  color:var(--text)!important;
-  font-size:15.5px;
-  font-family:'Inter',sans-serif!important;
-}
-[data-testid="stChatInput"] textarea::placeholder{color:var(--text-subtle);}
-[data-testid="stBottomBlockContainer"]{background:transparent;}
+.lc-alert-icon { flex-shrink: 0; font-size: 16px; }
 
-.lc-foot{
-  color:var(--text-subtle);
-  font-size:11.5px;
-  text-align:center;
-  margin-top:2rem;
-  font-weight:400;
-  letter-spacing:0.01em;
+/* ── Sample question section ── */
+.lc-samples-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--text-4);
+  margin-bottom: 1rem;
 }
 
-/* spinner */
-[data-testid="stSpinner"]{animation:shimmer 1.5s ease-in-out infinite;}
-[data-testid="stSpinner"] > div > div{
-  border-color:var(--border)!important;
-  border-top-color:var(--text)!important;
+/* ── Buttons ── */
+.stButton > button {
+  background: var(--card);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 13px 16px;
+  font-size: 13.5px;
+  font-weight: 500;
+  font-family: 'DM Sans', sans-serif;
+  text-align: left;
+  line-height: 1.45;
+  width: 100%;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: all .2s var(--r);
+}
+.stButton > button:hover {
+  background: var(--blue-light);
+  border-color: var(--blue-border);
+  color: var(--blue-dark);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+.stButton > button:active { transform: translateY(0); }
+.stButton > button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+/* ── Chat messages ── */
+[data-testid="stChatMessage"] {
+  background: transparent;
+  border: none;
+  padding: .3rem 0;
+  animation: fadeUp .4s var(--r) both;
+}
+[data-testid="stChatMessageContent"] {
+  font-size: 15px;
+  line-height: 1.72;
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+}
+[data-testid="stChatMessageContent"] p { margin: 0 0 .75rem; }
+[data-testid="stChatMessageContent"] p:last-child { margin-bottom: 0; }
+[data-testid="stChatMessageContent"] strong { color: var(--blue-dark); font-weight: 600; }
+[data-testid="stChatMessageContent"] em { color: var(--text-2); }
+[data-testid="stChatMessageContent"] blockquote {
+  border-left: 3px solid var(--blue-border);
+  margin: .75rem 0;
+  padding: 4px 0 4px 14px;
+  color: var(--text-3);
+  font-style: italic;
+  font-size: 13.5px;
+}
+[data-testid="stChatMessageContent"] ul,
+[data-testid="stChatMessageContent"] ol {
+  padding-left: 1.4rem;
+  margin: .5rem 0 .75rem;
+}
+[data-testid="stChatMessageContent"] li { margin-bottom: .35rem; }
+[data-testid="stChatMessageContent"] h3 {
+  font-family: 'Fraunces', serif;
+  font-size: 15.5px;
+  font-weight: 600;
+  color: var(--blue-dark);
+  margin: 1.1rem 0 .4rem;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--blue-border);
+}
+[data-testid="stChatMessageContent"] code {
+  background: var(--blue-light);
+  color: var(--blue-dark);
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 12.5px;
 }
 
-::selection{background:var(--text);color:var(--bg);}
+/* User bubble */
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {
+  background: var(--blue-light);
+  border: 1px solid var(--blue-border);
+  border-radius: 14px 14px 4px 14px;
+  padding: 13px 18px;
+  margin-left: 60px;
+}
 
-::-webkit-scrollbar{width:8px;height:8px;}
-::-webkit-scrollbar-track{background:transparent;}
-::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:999px;}
-::-webkit-scrollbar-thumb:hover{background:var(--text-subtle);}
+/* Assistant card */
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--blue);
+  border-radius: 4px 14px 14px 14px;
+  padding: 18px 20px 16px;
+  box-shadow: var(--shadow-sm);
+  margin-right: 60px;
+  transition: box-shadow .3s var(--r);
+}
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]):hover {
+  box-shadow: var(--shadow-md);
+}
+
+/* Source + no-provision labels */
+.lc-src-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 13px;
+}
+.lc-src-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: white;
+  background: var(--blue);
+  padding: 3px 10px;
+  border-radius: 6px;
+}
+.lc-none-chip {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-4);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-style: italic;
+}
+
+/* ── Chat input ── */
+[data-testid="stChatInput"] {
+  background: var(--card);
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+  transition: all .25s var(--r);
+}
+[data-testid="stChatInput"]:focus-within {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(30,64,175,.07), var(--shadow-md);
+}
+[data-testid="stChatInput"] textarea {
+  color: var(--text) !important;
+  font-size: 15px;
+  font-family: 'DM Sans', sans-serif !important;
+}
+[data-testid="stChatInput"] textarea::placeholder { color: var(--text-4); }
+[data-testid="stBottomBlockContainer"] { background: transparent; }
+
+/* ── Spinner ── */
+[data-testid="stSpinner"] > div > div {
+  border-color: var(--blue-border) !important;
+  border-top-color: var(--blue) !important;
+}
+
+/* ── Footer ── */
+.lc-foot {
+  font-size: 11.5px;
+  color: var(--text-4);
+  text-align: center;
+  margin-top: 2rem;
+  font-weight: 400;
+  line-height: 1.6;
+}
+
+::selection { background: var(--blue); color: #fff; }
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-s); border-radius: 999px; }
 </style>
 """, unsafe_allow_html=True)
 
 
-# ----------------------------------------------------------------- resources
+# ── Resource loading ──────────────────────────────────────────────────────────
 @st.cache_resource
 def get_corpus():
     return corpus.load_corpus()
 
+CFG, CORPUS_DATA = get_corpus()
+LOADED = dict(CORPUS_DATA)
 
-@st.cache_resource
-def get_pool():
-    raw = st.secrets.get("GEMINI_API_KEYS", "") if hasattr(st, "secrets") else ""
+
+def _api_key() -> str:
     try:
-        raw = st.secrets.get("GEMINI_API_KEYS", "")
+        k = st.secrets.get("CEREBRAS_API_KEY", "")
+        return (k.strip() if isinstance(k, str) else "")
     except Exception:
-        raw = ""
-    keys = [k.strip() for k in (raw if isinstance(raw, str) else ",".join(raw)).split(",") if k.strip()]
-    return {"keys": keys, "cycle": itertools.cycle(keys) if keys else None, "lock": threading.Lock()}
+        return ""
 
 
-CFG, CORPUS = get_corpus()
-POOL = get_pool()
-MODEL = CFG.get("model", "gemini-2.5-flash")
-LOADED = {cid: e for cid, e in CORPUS.items()}
+# ── LLM — streaming ───────────────────────────────────────────────────────────
+def _stream(messages: list[dict], system: str, model: str = MODEL_PRIMARY):
+    """
+    Generator → yields text fragments for st.write_stream.
+    Strips Qwen-3 <think>…</think> blocks on the fly so they never reach the UI.
+    Falls back to MODEL_FALLBACK on HTTP error.
+    """
+    key = _api_key()
+    if not key:
+        yield "⚠️  Add **CEREBRAS_API_KEY** in *App → Settings → Secrets* to enable answers."
+        return
 
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    msgs = [{"role": "system", "content": system}] + messages
+    body  = {"model": model, "messages": msgs, "max_tokens": 2048,
+             "temperature": 0.15, "stream": True}
 
-def gemini(system, contents, want_json=False, temperature=0.2):
-    if not POOL["keys"]:
-        raise RuntimeError("No API keys configured yet. Add GEMINI_API_KEYS in the app's Secrets.")
-    body = {"system_instruction": {"parts": [{"text": system}]}, "contents": contents,
-            "generationConfig": {"temperature": temperature, "maxOutputTokens": 2048,
-                                 **({"responseMimeType": "application/json"} if want_json else {})}}
-    last = None
-    for _ in range(len(POOL["keys"])):
-        with POOL["lock"]:
-            key = next(POOL["cycle"])
-        try:
-            r = requests.post(f"{API_ROOT}/{MODEL}:generateContent?key={key}", json=body, timeout=90)
-            if r.status_code == 429 or r.status_code >= 500:
-                last = f"HTTP {r.status_code}"; continue
+    def _iter(m):
+        body["model"] = m
+        with requests.post(CEREBRAS_URL, headers=headers, json=body,
+                           timeout=120, stream=True) as r:
+            if r.status_code == 429:
+                yield ("⚠️  Rate limit reached — please wait a moment and try again. "
+                       "(Free tier: 5 req/min, 150/hour)")
+                return
             r.raise_for_status()
-            d = r.json()
-            return "".join(p.get("text", "") for p in d["candidates"][0]["content"]["parts"]).strip()
-        except requests.RequestException as e:
-            last = str(e); continue
-    raise RuntimeError(f"All keys failed ({last}).")
+            in_think = False
+            for raw in r.iter_lines():
+                if not raw:
+                    continue
+                line = raw.decode() if isinstance(raw, bytes) else raw
+                if not line.startswith("data: "):
+                    continue
+                payload = line[6:]
+                if payload == "[DONE]":
+                    break
+                try:
+                    delta = json.loads(payload)["choices"][0]["delta"].get("content", "")
+                except (json.JSONDecodeError, KeyError):
+                    continue
+                if not delta:
+                    continue
+                # --- strip <think> blocks ---
+                if "<think>" in delta:
+                    in_think = True
+                if in_think:
+                    if "</think>" in delta:
+                        in_think = False
+                        delta = delta[delta.index("</think>") + 8:]
+                    else:
+                        continue
+                if delta:
+                    yield delta
+
+    try:
+        yield from _iter(model)
+    except requests.HTTPError:
+        # retry with fallback model
+        yield from _iter(MODEL_FALLBACK)
+    except requests.RequestException as exc:
+        yield f"\n\n⚠️  Connection error: {exc}"
 
 
-# ----------------------------------------------------------------- prompts
-def scope_lines():
-    return "\n".join(f'- id "{e["meta"]["id"]}": {e["meta"]["title"]} — {e["meta"]["scope"]}'
-                     for e in LOADED.values())
+# ── System prompt ─────────────────────────────────────────────────────────────
+SYSTEM = """You are a precise Indian labour law reference assistant for HR professionals and legal teams.
+
+You receive statutory text from India's four Labour Codes and their Central Rules, plus a list of any codes that had NO PROVISION found for the query.
+
+━━ ABSOLUTE RULES ━━
+
+1. SOURCE DISCIPLINE  
+   Answer ONLY from the statutory text provided. No outside knowledge, case law, internet sources, or
+   repealed Acts. If a required answer cannot be found in the supplied text, say so plainly.
+
+2. PRECISION CITATIONS — mandatory on every legal claim  
+   Format: **Section 70(1), Industrial Relations Code, 2020**  
+   Or for rules: **Rule 13(2), Industrial Relations (Central) Rules, 2021**  
+   Never paraphrase a provision without citing it.
+
+3. NO-PROVISION CODES  
+   For each code listed as having no provision, state explicitly:  
+   > *[Short Code Name] contains no provision on this topic.*
+
+4. PRACTICAL / ACTION QUESTIONS ("I have retrenched…", "What are my obligations?", "Can I…?")  
+   — Number every step or obligation.  
+   — Cite the enabling Section for each step.  
+   — Highlight timelines, notice periods, and monetary amounts in **bold**.  
+   — Be specific and actionable; do not hedge with generic legal disclaimers mid-answer.
+
+5. DEFINITIONAL QUESTIONS ("What is X?", "Define…", "Who is…?")  
+   — Give the exact statutory definition with citation.  
+   — If definitions differ across codes, show each with its own citation and note the difference.
+
+6. MULTI-CODE ANSWERS  
+   When multiple codes have relevant provisions, answer under separate ### Code Name headings.
+
+7. TONE  
+   Formal, precise, concise legal English. No padding, no repetition.
+
+8. CLOSE every answer with this line (verbatim):  
+   > ⚖️ Informational reference only — the cited statutory provisions are authoritative."""
 
 
-ROUTER_SYSTEM = """You route questions for an assistant covering ONLY these Indian labour codes \
-(and their Central Rules) that are currently loaded:
-{scope}
+# ── Pipeline ──────────────────────────────────────────────────────────────────
+def build_prompt(query: str, all_results: dict) -> str:
+    """Assemble the user message: grounding text + no-provision note + question."""
+    grounding = corpus.render_all_results(all_results)
+    no_prov = [res["meta"]["short"] for res in all_results.values() if not res["found"]]
 
-Route the latest user message on its own merits. Earlier turns are NOT context — do not infer
-the topic from them. Return ONLY JSON:
-{{"mode":"answer"|"clarify","codes":[...],"message":"..."}}
-
-Keyword hints (use these when the latest message matches; do NOT inherit a code from earlier turns):
-- strike, lock-out, trade union, industrial dispute, retrenchment, lay-off, standing orders, closure,
-  works committee, grievance redressal, negotiating union → "ir"
-- provident fund, PF, EPF, ESI, employees' state insurance, gratuity, pension, maternity benefit,
-  employees' compensation, building & construction workers' cess, gig/platform worker → "ss"
-- minimum wages, payment of wages, deduction, equal remuneration, bonus, wage period → "wages"
-- factories, working hours, leave, welfare facilities, hazardous, contract labour, inter-state migrant,
-  mines, dock, plantation → "osh"
-
-Out-of-scope examples (return mode="answer", codes=[]):
-- weather, time of day, today's date, news, sports, generic chitchat
-- taxation (GST, income tax, customs), corporate law, criminal law, family law
-- meta-questions like "which codes do you cover?", "what can you do?", "who are you?"
-- anything that doesn't map to a keyword hint above and isn't clearly about employment, wages,
-  working conditions, social security, or industrial relations
-
-- "answer": the latest message clearly concerns one loaded code (use the keyword hints), OR explicitly
-  asks for a comparison (list all relevant ids). Leave "message" empty.
-- "clarify": a term/topic is defined or treated differently across more than one loaded code and the
-  user hasn't said which (e.g. "wages", "employee", "worker", "appropriate Government", "establishment").
-  Put candidate ids in "codes" and a short, polite question naming those codes in "message".
-- "answer" with empty "codes": clearly outside all loaded codes (use the out-of-scope examples above).
-Be decisive; only clarify when the ambiguity genuinely changes the legal answer."""
-
-ANSWER_SYSTEM = """You are a precise legal-reference assistant for HR staff. Answer ONLY from the \
-statutory text supplied in this prompt (Sections/Rules of Indian labour codes). Rules:
-1. Use only the supplied text. No outside knowledge, repealed Acts, case law, or the internet. If the
-   answer is not in the supplied text, say so plainly and name what was searched. Never guess a provision.
-2. Cite precisely every time: the exact Section/sub-section/clause with the code's short title and year,
-   and for rules the exact Rule number with the Central Rules title (e.g. "Section 2(y), the Code on
-   Wages, 2019"). Tell the reader where to look ("see Section ...").
-3. Write in formal, precise legal English faithful to the wording. Quote only short defining phrases;
-   otherwise paraphrase exactly with the citation.
-4. Explain what the provision says; do not advise on a specific dispute or predict an outcome. End with
-   one short line that this is an informational reference and the cited provision is authoritative.
-5. If text from more than one code is supplied, answer per code under a heading and note differences.
-Keep it well-organised and no longer than needed. Use **bold** for the Section/Rule citations."""
+    parts = [f"=== STATUTORY TEXT ===\n{grounding}"]
+    if no_prov:
+        parts.append(
+            "=== NO PROVISION FOUND IN THESE CODES ===\n"
+            + "\n".join(f"• {n}" for n in no_prov)
+            + "\n(State this explicitly in your answer for each.)"
+        )
+    parts.append(f"=== QUESTION ===\n{query}")
+    return "\n\n".join(parts)
 
 
-def to_contents(history):
-    return [{"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]}
-            for m in history if m.get("content")]
-
-
-# ----------------------------------------------------------------- pipeline
-def run_pipeline(history, forced_code=None):
-    if forced_code and forced_code in LOADED:
-        codes = [forced_code]
-    else:
-        last_user = next((m for m in reversed(history) if m["role"] == "user"), None)
-        router_history = [last_user] if last_user else []
-        try:
-            route = json.loads(gemini(ROUTER_SYSTEM.format(scope=scope_lines()),
-                                      to_contents(router_history), want_json=True, temperature=0.0))
-        except Exception:
-            route = {"mode": "answer", "codes": list(LOADED)[:1]}
-        if route.get("mode") == "clarify":
-            opts = [{"id": cid, "label": LOADED[cid]["meta"]["short"]}
-                    for cid in route.get("codes", []) if cid in LOADED]
-            return {"kind": "clarify", "content": route.get("message", "Which code do you mean?"),
-                    "options": opts}
-        codes = [c for c in route.get("codes", []) if c in LOADED]
-
-    if not codes:
-        loaded_list = ", ".join(LOADED[c]["meta"]["short"] for c in LOADED)
-        return {"kind": "answer",
-                "content": (f"I can only answer from the loaded labour codes and their Central Rules: "
-                            f"**{loaded_list}**. Your question doesn't appear to fall within them — "
-                            "please rephrase, or ask about one of these codes."),
-                "sources": []}
-
-    query = history[-1]["content"]
-    picks, sources = [], []
-    for cid in codes:
-        chunks = corpus.search(LOADED[cid], query, k=12)
-        if chunks:
-            picks += chunks
-            sources.append(LOADED[cid]["meta"]["title"])
-
-    if not picks:
-        other = [cid for cid in LOADED if cid not in codes]
-        opts = [{"id": cid, "label": LOADED[cid]["meta"]["short"]} for cid in other]
-        chosen = " and ".join(LOADED[c]["meta"]["short"] for c in codes)
-        msg = (f"I didn't find anything on that in **{chosen}**. "
-               "Would you like me to check another code?")
-        return {"kind": "clarify", "content": msg, "options": opts}
-
-    grounding = corpus.render_chunks(picks)
-    contents = [{"role": "user", "parts": [{"text": "Use only the following statutory text:\n\n" + grounding}]},
-                {"role": "model", "parts": [{"text": "Understood. I will answer strictly from this text "
-                 "and cite exact Sections and Rules."}]},
-                {"role": "user", "parts": [{"text": query}]}]
-    answer = gemini(ANSWER_SYSTEM, contents, temperature=0.2)
-    return {"kind": "answer", "content": answer, "sources": sources}
-
-
-# ----------------------------------------------------------------- state + actions
+# ── Session state ─────────────────────────────────────────────────────────────
 if "messages" not in st.session_state:
-    st.session_state.messages = []
-    st.session_state.last_query = None
-    st.session_state.todo = None
+    st.session_state.messages: list[dict] = []
+if "pending" not in st.session_state:
+    st.session_state.pending: str | None = None
 
 
-def ask(query, forced_code=None, label=None):
-    st.session_state.messages.append({"role": "user", "kind": "text",
-                                      "content": label or query})
-    if forced_code is None:
-        st.session_state.last_query = query
-    st.session_state.todo = (query if forced_code is None else st.session_state.last_query, forced_code)
+def _submit(q: str):
+    st.session_state.pending = q
 
 
-# ----------------------------------------------------------------- header
-badges = "".join(f'<span class="lc-badge">{e["meta"]["short"]}</span>' for e in LOADED.values())
+# ── Header ─────────────────────────────────────────────────────────────────────
+chips = "".join(
+    f'<span class="lc-code-chip">{e["meta"]["short"]}</span>'
+    for e in LOADED.values()
+)
 st.markdown(f"""
 <div class="lc-hero">
-  <div class="lc-eyebrow">Indian Labour Codes · Legal Reference</div>
-  <h1 class="lc-title">Labour Codes Assistant</h1>
-  <p class="lc-sub">Answers grounded in the four labour Codes and their Central Rules, with the
-  exact Section and Rule cited every time.</p>
-  <div class="lc-badges">{badges}</div>
+  <div class="lc-pill"><span class="lc-pill-dot"></span>Indian Labour Codes · Legal Reference</div>
+  <h1 class="lc-title">Labour Codes <em>Assistant</em></h1>
+  <p class="lc-sub">Answers grounded in the four Labour Codes and their Central Rules —
+  every response cites the exact Section and Rule number.</p>
+  <div class="lc-codes">{chips}</div>
 </div>
-<div class="lc-rule"></div>
+<div class="lc-divider"></div>
 """, unsafe_allow_html=True)
 
-if not POOL["keys"]:
-    st.markdown('<div class="lc-warn">⚙️ Almost there — add your <b>GEMINI_API_KEYS</b> in '
-                'App&nbsp;→&nbsp;Settings&nbsp;→&nbsp;Secrets, then it starts answering.</div>',
-                unsafe_allow_html=True)
+if not _api_key():
+    st.markdown(
+        '<div class="lc-alert">'
+        '<span class="lc-alert-icon">⚙️</span>'
+        'Add your <b>CEREBRAS_API_KEY</b> in <em>App → Settings → Secrets</em> to enable answers.'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
-# ----------------------------------------------------------------- input
-if prompt := st.chat_input("Ask about any provision…  e.g. What is the definition of wages?"):
-    ask(prompt)
+# ── Chat input ────────────────────────────────────────────────────────────────
+if prompt := st.chat_input("Ask anything… e.g. What are the conditions for retrenchment?"):
+    _submit(prompt)
 
-# process queued work
-if st.session_state.todo:
-    q, fc = st.session_state.todo
-    st.session_state.todo = None
-    hist = [m for m in st.session_state.messages if m["kind"] == "text"]
-    with st.spinner("Reading the code…"):
-        try:
-            res = run_pipeline(hist, forced_code=fc)
-        except Exception as e:
-            res = {"kind": "answer", "content": f"Sorry — {e}", "sources": []}
-    st.session_state.messages.append({"role": "assistant",
-                                      "kind": "text" if res["kind"] == "answer" else "clarify", **res})
+# ── Render history ────────────────────────────────────────────────────────────
+for msg in st.session_state.messages:
+    if msg["role"] == "user":
+        with st.chat_message("user", avatar="👤"):
+            st.markdown(msg["content"])
+    else:
+        with st.chat_message("assistant", avatar="⚖"):
+            # Source chips row
+            src  = msg.get("sources", [])
+            none = msg.get("no_provision", [])
+            if src or none:
+                src_html  = "".join(f'<span class="lc-src-chip">📋 {s}</span>' for s in src)
+                none_html = "".join(f'<span class="lc-none-chip">∅ {n}</span>' for n in none)
+                st.markdown(
+                    f'<div class="lc-src-row">{src_html}{none_html}</div>',
+                    unsafe_allow_html=True,
+                )
+            st.markdown(msg["content"])
 
-# ----------------------------------------------------------------- render
-if not st.session_state.messages:
-    st.markdown('<div class="lc-eyebrow">Try asking</div>', unsafe_allow_html=True)
-    samples = ["What is the definition of wages?",
-               "How is the minimum rate of wages fixed?",
-               "What notice is required before retrenchment?",
-               "When is an employee eligible for bonus?"]
+# ── Sample questions (only when no history and nothing pending) ───────────────
+if not st.session_state.messages and not st.session_state.pending:
+    st.markdown('<div class="lc-samples-label">Try asking</div>', unsafe_allow_html=True)
+    samples = [
+        "What are the conditions and procedure for retrenchment?",
+        "I have retrenched an employee — what are all my legal obligations?",
+        "How is 'wages' defined differently across the four Codes?",
+        "What notice period is required before a lawful strike?",
+        "When is an employee eligible for gratuity and how is it calculated?",
+        "What are an employer's obligations under the Code on Social Security?",
+    ]
     c1, c2 = st.columns(2)
     for i, s in enumerate(samples):
-        (c1 if i % 2 == 0 else c2).button(s, key=f"samp{i}", on_click=ask, args=(s,))
-else:
-    for i, m in enumerate(st.session_state.messages):
-        with st.chat_message(m["role"], avatar=("⚖️" if m["role"] == "assistant" else "🧑")):
-            if m.get("kind") == "clarify":
-                st.markdown(m["content"])
-                last = (i == len(st.session_state.messages) - 1)
-                cols = st.columns(max(len(m.get("options", [])), 1))
-                for col, opt in zip(cols, m.get("options", [])):
-                    col.button(opt["label"], key=f"opt-{i}-{opt['id']}", disabled=not last,
-                               on_click=ask, args=(st.session_state.last_query, opt["id"],
-                                                   f"The {opt['label']}."))
-            else:
-                if m["role"] == "assistant" and m.get("sources"):
-                    st.markdown(f'<div class="lc-src">Source · {" · ".join(m["sources"])}</div>',
-                                unsafe_allow_html=True)
-                st.markdown(m["content"])
+        (c1 if i % 2 == 0 else c2).button(s, key=f"samp{i}", on_click=_submit, args=(s,))
 
-st.markdown('<div class="lc-foot">Informational reference for HR · the cited provision is the '
-            'authoritative text</div>', unsafe_allow_html=True)
+# ── Process pending question ──────────────────────────────────────────────────
+if st.session_state.pending:
+    q = st.session_state.pending
+    st.session_state.pending = None
+
+    # Show user message immediately
+    st.session_state.messages.append({"role": "user", "content": q})
+    with st.chat_message("user", avatar="👤"):
+        st.markdown(q)
+
+    # Search all codes in parallel
+    with st.spinner("Searching the codes…"):
+        all_results = corpus.search_all(LOADED, q, k=10)
+
+    sources      = [res["meta"]["short"] for res in all_results.values() if res["found"]]
+    no_provision = [res["meta"]["short"] for res in all_results.values() if not res["found"]]
+
+    user_msg = build_prompt(q, all_results)
+
+    with st.chat_message("assistant", avatar="⚖"):
+        # Show source/no-provision chips before streaming begins
+        if sources or no_provision:
+            src_html  = "".join(f'<span class="lc-src-chip">📋 {s}</span>' for s in sources)
+            none_html = "".join(f'<span class="lc-none-chip">∅ {n}</span>' for n in no_provision)
+            st.markdown(
+                f'<div class="lc-src-row">{src_html}{none_html}</div>',
+                unsafe_allow_html=True,
+            )
+
+        if not sources:
+            # Nothing found in any code
+            loaded_names = " · ".join(e["meta"]["short"] for e in LOADED.values())
+            response = (
+                f"No relevant provisions were found across any of the loaded codes "
+                f"(**{loaded_names}**) for this query. "
+                "Please try rephrasing, or ask about a specific Section or topic covered by these Codes."
+            )
+            st.markdown(response)
+        else:
+            response = st.write_stream(
+                _stream([{"role": "user", "content": user_msg}], system=SYSTEM)
+            )
+
+    st.session_state.messages.append({
+        "role": "assistant",
+        "content": response,
+        "sources": sources,
+        "no_provision": no_provision,
+    })
+    st.rerun()
+
+# ── Footer ────────────────────────────────────────────────────────────────────
+st.markdown(
+    '<div class="lc-foot">'
+    'Informational reference for HR &amp; Legal teams · '
+    'Powered by Cerebras + Qwen-3 · '
+    'Cited statutory provisions are authoritative'
+    '</div>',
+    unsafe_allow_html=True,
+)
