@@ -395,7 +395,7 @@ def _stream(messages: list[dict], system: str, model: str = MODEL_PRIMARY):
 
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     msgs = [{"role": "system", "content": system}] + messages
-    body  = {"model": model, "messages": msgs, "max_tokens": 2048,
+    body  = {"model": model, "messages": msgs, "max_tokens": 4096,
              "temperature": 0.15, "stream": True}
 
     def _iter(m, is_retry=False):
@@ -477,9 +477,9 @@ For each code listed as having NO PROVISION, write one line:
 ━━ ABSOLUTE RULES ━━
 
 1. PART 1 must never quote statute — plain English only.
-2. PART 2 must reproduce the statutory text faithfully and completely (within what was supplied). Do not paraphrase in Part 2.
+2. PART 2 is MANDATORY whenever any statutory text is supplied. Never skip it. Reproduce the provisions faithfully — do not paraphrase in Part 2.
 3. Source discipline: use only the statutory text supplied. No outside knowledge, case law, or internet.
-4. If the answer cannot be found in the supplied text, say so plainly in Part 1 and omit Part 2.
+4. Only if absolutely zero statutory text was supplied: say so in Part 1 and omit Part 2.
 5. Close every answer with this line (verbatim):
    > ⚖️ Informational reference only — the cited statutory provisions are authoritative."""
 
