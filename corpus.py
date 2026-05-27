@@ -131,8 +131,9 @@ def _terms(q: str) -> list[str]:
     return list(expanded)
 
 
-def search(entry: dict, query: str, k: int = 12) -> list[dict]:
-    """Return up to k chunks from one code+rules most relevant to the query."""
+def search(entry: dict, query: str, k: int = 5, min_score: int = 2) -> list[dict]:
+    """Return up to k chunks from one code+rules most relevant to the query.
+    Chunks scoring below min_score are excluded to keep grounding tight."""
     terms = _terms(query)
     explicit = {int(n) for n in re.findall(r"(?:section|rule)\s+(\d{1,3})", query.lower())}
     definitional = bool(re.search(r"\b(defin|meaning|means|what is|who is)\b", query.lower()))
@@ -146,7 +147,7 @@ def search(entry: dict, query: str, k: int = 12) -> list[dict]:
             score += 100
         if definitional and ch["num"] == 2:
             score += 8
-        if score:
+        if score >= min_score:
             scored.append((score, ch))
     scored.sort(key=lambda x: x[0], reverse=True)
     picks = [ch for _, ch in scored[:k]]
@@ -171,16 +172,29 @@ def search_all(corpus_dict: dict, query: str, k: int = 10) -> dict:
     }
 
 
+_MAX_CHUNK_CHARS = 700   # hard cap per chunk to stay within token budget
+
+
+def _trim(text: str) -> str:
+    """Truncate a chunk to _MAX_CHUNK_CHARS, breaking at a sentence boundary if possible."""
+    if len(text) <= _MAX_CHUNK_CHARS:
+        return text
+    cut = text[:_MAX_CHUNK_CHARS]
+    # try to end at last full sentence
+    last_stop = max(cut.rfind(". "), cut.rfind(".\n"))
+    return (cut[:last_stop + 1] if last_stop > _MAX_CHUNK_CHARS // 2 else cut) + " [...]"
+
+
 def render_chunks(picks: list[dict]) -> str:
     return "\n\n".join(
-        f"===== {c['source']} — {c['label']} =====\n{c['text']}" for c in picks
+        f"===== {c['source']} — {c['label']} =====\n{_trim(c['text'])}" for c in picks
     )
 
 
 def render_all_results(all_results: dict) -> str:
     """
     Build the grounding text sent to the LLM:
-    - Codes with hits → their chunks, grouped under a clear heading.
+    - Codes with hits → their chunks (truncated), grouped under a clear heading.
     - Codes with no hits → omitted from grounding (noted separately via no_provision list).
     """
     parts = []
