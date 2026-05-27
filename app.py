@@ -2,9 +2,10 @@
 app.py — Labour Codes Assistant (Streamlit).
 
 Pipeline per question:
-  1) SEARCH ALL  — search every loaded code simultaneously (no routing, no dead ends).
-  2) RENDER      — grounding text from codes that have hits; no-provision list for those that don't.
-  3) STREAM      — single Cerebras call that answers from grounding, cites exact Sections/Rules,
+  1) CORRECT     — detect and fix typos/misspellings against known legal vocabulary.
+  2) SEARCH ALL  — search every loaded code simultaneously (no routing, no dead ends).
+  3) RENDER      — grounding text from codes that have hits; no-provision list for those that don't.
+  4) STREAM      — single Cerebras call that answers from grounding, cites exact Sections/Rules,
                    and explicitly states which codes have no provision on the topic.
 
 Keys live in st.secrets (server-side):  CEREBRAS_API_KEY
@@ -19,8 +20,8 @@ import corpus
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 CEREBRAS_URL = "https://api.cerebras.ai/v1/chat/completions"
-MODEL_PRIMARY  = "gpt-oss-120b"                        # Production — stable
-MODEL_FALLBACK = "qwen-3-235b-a22b-instruct-2507"      # Preview — try if primary fails
+MODEL_PRIMARY  = "gpt-oss-120b"
+MODEL_FALLBACK = "qwen-3-235b-a22b-instruct-2507"
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Labour Codes", page_icon="⚖", layout="centered")
@@ -47,6 +48,9 @@ st.markdown("""
   --text-4:       #94a3b8;
   --green:        #16a34a;
   --green-bg:     #f0fdf4;
+  --amber:        #d97706;
+  --amber-bg:     #fffbeb;
+  --amber-border: #fde68a;
   --shadow-sm:    0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
   --shadow-md:    0 4px 20px -4px rgba(30,64,175,0.10);
   --shadow-lg:    0 12px 40px -8px rgba(30,64,175,0.14);
@@ -60,7 +64,6 @@ st.markdown("""
 
 * { box-sizing: border-box; }
 
-/* ── App shell ── */
 .stApp {
   background: var(--bg);
   color: var(--text);
@@ -157,6 +160,24 @@ st.markdown("""
   line-height: 1.55;
 }
 .lc-alert-icon { flex-shrink: 0; font-size: 16px; }
+
+/* ── Correction notice ── */
+.lc-correction {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--amber-bg);
+  border: 1px solid var(--amber-border);
+  border-radius: 10px;
+  padding: 11px 15px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: #92400e;
+  line-height: 1.5;
+  animation: fadeIn .3s ease both;
+}
+.lc-correction-icon { flex-shrink: 0; font-size: 15px; }
+.lc-correction strong { color: #78350f; }
 
 /* ── Sample question section ── */
 .lc-samples-label {
@@ -364,7 +385,7 @@ def _api_key() -> str:
 def _stream(messages: list[dict], system: str, model: str = MODEL_PRIMARY):
     """
     Generator → yields text fragments for st.write_stream.
-    Strips Qwen-3 <think>…</think> blocks on the fly so they never reach the UI.
+    Strips Qwen-3 <think>…</think> blocks on the fly.
     Falls back to MODEL_FALLBACK on HTTP error.
     """
     key = _api_key()
@@ -409,7 +430,6 @@ def _stream(messages: list[dict], system: str, model: str = MODEL_PRIMARY):
                     continue
                 if not delta:
                     continue
-                # --- strip <think> blocks ---
                 if "<think>" in delta:
                     in_think = True
                 if in_think:
@@ -424,7 +444,6 @@ def _stream(messages: list[dict], system: str, model: str = MODEL_PRIMARY):
     try:
         yield from _iter(model)
     except requests.HTTPError:
-        # retry with fallback model
         yield from _iter(MODEL_FALLBACK)
     except requests.RequestException as exc:
         yield f"\n\n⚠️  Connection error: {exc}"
@@ -437,9 +456,11 @@ You receive statutory text from India's four Labour Codes and their Central Rule
 
 ━━ RESPONSE FORMAT — follow this every time ━━
 
-**PART 1 — Plain Answer** (3–5 sentences, no citations)
-Write a clear, jargon-free summary of what the law says. Speak directly to the HR professional.
-Practical questions get numbered obligations/steps. Definitional questions get a one-paragraph explanation.
+**PART 1 — Plain Answer**
+Write a SHORT, practical plain-English summary. Follow this pattern:
+- For obligations/procedures: use 4–6 bullet points, each one sentence. Cover who must act, what they must do, key thresholds (numbers, timelines), and consequences.
+- For definitions: one short paragraph (3–4 sentences max). State what it includes and what it excludes.
+- No citations, no legal jargon, no padding. Be direct.
 
 ---
 
@@ -478,6 +499,20 @@ def build_prompt(query: str, all_results: dict) -> str:
         )
     parts.append(f"=== QUESTION ===\n{query}")
     return "\n\n".join(parts)
+
+
+def _correction_html(corrections: list[tuple[str, str]]) -> str:
+    """Build the amber correction-notice HTML."""
+    pairs = ", ".join(
+        f'<strong>{orig}</strong> → <strong>{fix}</strong>'
+        for orig, fix in corrections
+    )
+    return (
+        f'<div class="lc-correction">'
+        f'<span class="lc-correction-icon">✏️</span>'
+        f'Interpreted as: {pairs}'
+        f'</div>'
+    )
 
 
 # ── Session state ─────────────────────────────────────────────────────────────
@@ -527,6 +562,9 @@ for msg in st.session_state.messages:
             st.markdown(msg["content"])
     else:
         with st.chat_message("assistant", avatar="⚖"):
+            # Correction notice (if any)
+            if msg.get("corrections"):
+                st.markdown(_correction_html(msg["corrections"]), unsafe_allow_html=True)
             # Source chips row
             src  = msg.get("sources", [])
             none = msg.get("no_provision", [])
@@ -556,25 +594,32 @@ if not st.session_state.messages and not st.session_state.pending:
 
 # ── Process pending question ──────────────────────────────────────────────────
 if st.session_state.pending:
-    q = st.session_state.pending
+    raw_q = st.session_state.pending
     st.session_state.pending = None
 
-    # Show user message immediately
-    st.session_state.messages.append({"role": "user", "content": q})
-    with st.chat_message("user", avatar="👤"):
-        st.markdown(q)
+    # ── Step 1: Typo correction ──
+    corrected_q, corrections = corpus.correct_query(raw_q)
 
-    # Search all codes in parallel
+    # Show user message (original text)
+    st.session_state.messages.append({"role": "user", "content": raw_q})
+    with st.chat_message("user", avatar="👤"):
+        st.markdown(raw_q)
+
+    # ── Step 2: Search all codes using corrected query ──
     with st.spinner("Searching the codes…"):
-        all_results = corpus.search_all(LOADED, q, k=4)
+        all_results = corpus.search_all(LOADED, corrected_q, k=4)
 
     sources      = [res["meta"]["short"] for res in all_results.values() if res["found"]]
     no_provision = [res["meta"]["short"] for res in all_results.values() if not res["found"]]
 
-    user_msg = build_prompt(q, all_results)
+    user_msg = build_prompt(corrected_q, all_results)
 
     with st.chat_message("assistant", avatar="⚖"):
-        # Show source/no-provision chips before streaming begins
+        # Correction notice
+        if corrections:
+            st.markdown(_correction_html(corrections), unsafe_allow_html=True)
+
+        # Source/no-provision chips
         if sources or no_provision:
             src_html  = "".join(f'<span class="lc-src-chip">📋 {s}</span>' for s in sources)
             none_html = "".join(f'<span class="lc-none-chip">∅ {n}</span>' for n in no_provision)
@@ -584,7 +629,6 @@ if st.session_state.pending:
             )
 
         if not sources:
-            # Nothing found in any code
             loaded_names = " · ".join(e["meta"]["short"] for e in LOADED.values())
             response = (
                 f"No relevant provisions were found across any of the loaded codes "
@@ -602,6 +646,7 @@ if st.session_state.pending:
         "content": response,
         "sources": sources,
         "no_provision": no_provision,
+        "corrections": corrections,
     })
     st.rerun()
 
