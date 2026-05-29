@@ -1,6 +1,6 @@
 {
   "_note": "This file is the single source of truth for what the assistant covers and how the documents relate. The 'replaced_acts' list is NOT loaded today; it is here so the future 'what changed' comparison feature has a ready map. Verify the replaced-act lists against your official copies before relying on them.",
-  "model": "global.anthropic.claude-sonnet-4-6",
+  "model": "amazon.nova-pro-v1:0",
   "codes": [
     {
       "id": "wages",
