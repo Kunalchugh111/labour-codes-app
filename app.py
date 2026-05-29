@@ -1,370 +1,524 @@
 """
-app.py — Labour Codes Assistant (Streamlit).
+app.py — Labour Codes Assistant (Streamlit)
+Backend : AWS Bedrock — claude-sonnet-4-6
+Design  : White · Navy Blue · Slate — editorial-legal aesthetic
 
-Pipeline per question:
-  1) CORRECT     — detect and fix typos/misspellings against known legal vocabulary.
-  2) SEARCH ALL  — search every loaded code simultaneously (no routing, no dead ends).
-  3) RENDER      — grounding text from codes that have hits; no-provision list for those that don't.
-  4) STREAM      — single Cerebras call that answers from grounding, cites exact Sections/Rules,
-                   and explicitly states which codes have no provision on the topic.
-
-Keys live in st.secrets (server-side):  CEREBRAS_API_KEY
+Secrets required in Streamlit (App → Settings → Secrets):
+  AWS_ACCESS_KEY_ID
+  AWS_SECRET_ACCESS_KEY
+  AWS_REGION          (e.g. us-east-1)
 """
 
 import json
 import re
-import requests
+import boto3
 import streamlit as st
 
 import corpus
 
-# ── Constants ─────────────────────────────────────────────────────────────────
-CEREBRAS_URL = "https://api.cerebras.ai/v1/chat/completions"
-MODEL_PRIMARY  = "gpt-oss-120b"
-MODEL_FALLBACK = "qwen-3-235b-a22b-instruct-2507"
+# ── Model config ──────────────────────────────────────────────────────────────
+MODEL_ID = "us.anthropic.claude-sonnet-4-6-20250514-v1:0"
 
 # ── Page config ───────────────────────────────────────────────────────────────
-st.set_page_config(page_title="Labour Codes", page_icon="⚖", layout="centered")
+st.set_page_config(
+    page_title="Labour Codes — Legal Reference",
+    page_icon="⚖️",
+    layout="centered",
+)
 
 # ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;0,9..144,700;1,9..144,300&family=DM+Sans:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Sora:wght@300;400;500;600&display=swap');
 
 :root {
-  --blue:         #1E40AF;
-  --blue-dark:    #1e3a8a;
-  --blue-mid:     #3b82f6;
-  --blue-light:   #eff6ff;
-  --blue-border:  #bfdbfe;
-  --bg:           #ffffff;
-  --bg-subtle:    #f8fafc;
-  --card:         #ffffff;
-  --border:       #e2e8f0;
-  --border-s:     #cbd5e1;
-  --text:         #0f172a;
-  --text-2:       #334155;
-  --text-3:       #64748b;
-  --text-4:       #94a3b8;
-  --green:        #16a34a;
-  --green-bg:     #f0fdf4;
-  --amber:        #d97706;
-  --amber-bg:     #fffbeb;
-  --amber-border: #fde68a;
-  --shadow-sm:    0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-  --shadow-md:    0 4px 20px -4px rgba(30,64,175,0.10);
-  --shadow-lg:    0 12px 40px -8px rgba(30,64,175,0.14);
-  --r:            cubic-bezier(0.16,1,0.3,1);
+  /* Palette */
+  --navy:          #0f2557;
+  --navy-mid:      #1e3a8a;
+  --navy-light:    #dbeafe;
+  --navy-xlight:   #eff6ff;
+  --navy-border:   #bfdbfe;
+  --slate:         #475569;
+  --slate-light:   #f1f5f9;
+  --slate-border:  #e2e8f0;
+  --slate-muted:   #94a3b8;
+  --white:         #ffffff;
+  --ink:           #0a1628;
+  --ink-2:         #1e293b;
+  --ink-3:         #334155;
+
+  /* Shadows */
+  --shadow-xs:  0 1px 2px rgba(15,37,87,0.06);
+  --shadow-sm:  0 2px 8px rgba(15,37,87,0.08);
+  --shadow-md:  0 8px 32px rgba(15,37,87,0.12);
+  --shadow-lg:  0 20px 60px rgba(15,37,87,0.16);
+
+  /* Motion */
+  --ease: cubic-bezier(0.16,1,0.3,1);
 }
 
-@keyframes fadeUp   { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
-@keyframes fadeIn   { from{opacity:0} to{opacity:1} }
-@keyframes shimmer  { 0%,100%{opacity:.5} 50%{opacity:1} }
-@keyframes slideIn  { from{opacity:0;transform:translateX(-6px)} to{opacity:1;transform:translateX(0)} }
-
-* { box-sizing: border-box; }
+/* ── Reset & base ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 .stApp {
-  background: var(--bg);
-  color: var(--text);
-  font-family: 'DM Sans', system-ui, sans-serif;
+  background: var(--white);
+  font-family: 'Sora', system-ui, sans-serif;
+  color: var(--ink);
   -webkit-font-smoothing: antialiased;
 }
-[data-testid="stHeader"],[data-testid="stToolbar"],#MainMenu,footer { display:none!important; }
+
+[data-testid="stHeader"],
+[data-testid="stToolbar"],
+#MainMenu, footer { display: none !important; }
+
 .block-container {
-  max-width: 780px;
-  padding-top: 3.5rem !important;
-  padding-bottom: 8rem;
+  max-width: 800px !important;
+  padding-top: 0 !important;
+  padding-bottom: 9rem !important;
+  padding-left: 1.5rem !important;
+  padding-right: 1.5rem !important;
 }
 
-/* ── Hero ── */
-.lc-hero { margin: 0 0 2.75rem; animation: fadeUp .7s var(--r) both; }
+/* ── Keyframes ── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.4; transform: scale(0.85); }
+  50%       { opacity: 1;   transform: scale(1); }
+}
+@keyframes shimmer-line {
+  0%   { background-position: -600px 0; }
+  100% { background-position: 600px 0; }
+}
 
-.lc-pill {
+/* ══════════════════════════════════════════════
+   HERO SECTION
+══════════════════════════════════════════════ */
+.lc-hero-wrap {
+  position: relative;
+  padding: 4rem 0 2.5rem;
+  animation: fadeUp 0.8s var(--ease) both;
+  overflow: hidden;
+}
+
+/* Decorative rule line behind title */
+.lc-hero-wrap::before {
+  content: '';
+  position: absolute;
+  top: 5.2rem;
+  left: -1.5rem;
+  right: -1.5rem;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--navy-border) 20%, var(--navy-border) 80%, transparent);
+  opacity: 0.6;
+}
+
+.lc-eyebrow {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  font-size: 11px;
+  gap: 8px;
+  font-size: 10.5px;
   font-weight: 600;
-  letter-spacing: .1em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--blue);
-  background: var(--blue-light);
-  border: 1px solid var(--blue-border);
-  padding: 4px 13px 4px 10px;
-  border-radius: 999px;
-  margin-bottom: .85rem;
+  color: var(--navy-mid);
+  margin-bottom: 1.1rem;
 }
-.lc-pill-dot {
-  width: 6px; height: 6px;
+
+.lc-eyebrow-dot {
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: var(--blue-mid);
-  animation: shimmer 2s ease-in-out infinite;
+  background: var(--navy-mid);
+  animation: pulse-dot 2.4s ease-in-out infinite;
+}
+
+.lc-eyebrow-line {
+  display: inline-block;
+  width: 28px;
+  height: 1.5px;
+  background: var(--navy-mid);
+  opacity: 0.5;
 }
 
 .lc-title {
-  font-family: 'Fraunces', Georgia, serif;
-  font-size: 44px;
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: clamp(36px, 5vw, 52px);
   font-weight: 700;
-  color: var(--text);
-  margin: 0 0 .55rem;
-  letter-spacing: -.03em;
-  line-height: 1.08;
+  color: var(--navy);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.2rem;
 }
-.lc-title em { font-style: italic; color: var(--blue); font-weight: 300; }
+
+.lc-title-italic {
+  font-style: italic;
+  font-weight: 400;
+  color: var(--slate);
+}
 
 .lc-sub {
-  font-size: 15.5px;
-  color: var(--text-3);
-  line-height: 1.65;
-  margin: 0;
-  max-width: 510px;
-  font-weight: 400;
+  font-size: 15px;
+  font-weight: 300;
+  color: var(--slate);
+  line-height: 1.7;
+  max-width: 520px;
+  margin-top: 1rem;
 }
 
+/* Code chips row */
 .lc-codes {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 1.4rem;
+  gap: 8px;
+  margin-top: 1.6rem;
 }
+
 .lc-code-chip {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
-  color: var(--blue-dark);
-  background: var(--blue-light);
-  border: 1px solid var(--blue-border);
+  letter-spacing: 0.04em;
+  color: var(--navy-mid);
+  background: var(--navy-xlight);
+  border: 1px solid var(--navy-border);
   padding: 5px 14px;
-  border-radius: 8px;
-  transition: all .2s var(--r);
+  border-radius: 4px;
 }
 
-.lc-divider {
+/* ── Divider ── */
+.lc-rule {
   height: 1px;
-  background: linear-gradient(90deg, transparent, var(--border) 15%, var(--border) 85%, transparent);
-  margin: 2rem 0 1.75rem;
+  background: var(--slate-border);
+  margin: 2.25rem 0 2rem;
+  opacity: 0.7;
 }
 
-/* ── Alert ── */
+/* ══════════════════════════════════════════════
+   ALERT / NOTICE BANNERS
+══════════════════════════════════════════════ */
 .lc-alert {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  background: var(--blue-light);
-  border: 1px solid var(--blue-border);
-  border-radius: 10px;
-  padding: 13px 16px;
-  margin-bottom: 1.25rem;
+  gap: 12px;
+  background: var(--navy-xlight);
+  border-left: 3px solid var(--navy-mid);
+  border-radius: 0 8px 8px 0;
+  padding: 14px 18px;
+  margin-bottom: 1.5rem;
   font-size: 13.5px;
-  color: var(--blue-dark);
-  line-height: 1.55;
+  color: var(--navy);
+  line-height: 1.6;
 }
-.lc-alert-icon { flex-shrink: 0; font-size: 16px; }
 
-/* ── Correction notice ── */
 .lc-correction {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  background: var(--amber-bg);
-  border: 1px solid var(--amber-border);
-  border-radius: 10px;
-  padding: 11px 15px;
-  margin-bottom: 10px;
+  background: #fefce8;
+  border-left: 3px solid #ca8a04;
+  border-radius: 0 8px 8px 0;
+  padding: 11px 16px;
+  margin-bottom: 12px;
   font-size: 13px;
-  color: #92400e;
-  line-height: 1.5;
-  animation: fadeIn .3s ease both;
+  color: #713f12;
+  line-height: 1.55;
+  animation: fadeIn 0.3s ease both;
 }
-.lc-correction-icon { flex-shrink: 0; font-size: 15px; }
-.lc-correction strong { color: #78350f; }
 
-/* ── Sample question section ── */
+/* ══════════════════════════════════════════════
+   SAMPLE QUESTIONS
+══════════════════════════════════════════════ */
 .lc-samples-label {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: .1em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--text-4);
+  color: var(--slate-muted);
   margin-bottom: 1rem;
 }
 
-/* ── Buttons ── */
 .stButton > button {
-  background: var(--card);
-  color: var(--text-2);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 13px 16px;
-  font-size: 13.5px;
-  font-weight: 500;
-  font-family: 'DM Sans', sans-serif;
+  background: var(--white);
+  color: var(--ink-3);
+  border: 1px solid var(--slate-border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  font-size: 13px;
+  font-weight: 400;
+  font-family: 'Sora', sans-serif;
   text-align: left;
-  line-height: 1.45;
+  line-height: 1.5;
   width: 100%;
   cursor: pointer;
-  box-shadow: var(--shadow-sm);
-  transition: all .2s var(--r);
+  box-shadow: var(--shadow-xs);
+  transition: all 0.22s var(--ease);
+  position: relative;
+  overflow: hidden;
 }
-.stButton > button:hover {
-  background: var(--blue-light);
-  border-color: var(--blue-border);
-  color: var(--blue-dark);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
-}
-.stButton > button:active { transform: translateY(0); }
-.stButton > button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 
-/* ── Chat messages ── */
+.stButton > button::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--navy-mid);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  border-radius: 0;
+}
+
+.stButton > button:hover {
+  background: var(--navy-xlight);
+  border-color: var(--navy-border);
+  color: var(--navy);
+  transform: translateX(2px);
+  box-shadow: var(--shadow-sm);
+}
+
+.stButton > button:hover::before { opacity: 1; }
+.stButton > button:active { transform: translateX(1px); box-shadow: var(--shadow-xs); }
+.stButton > button:focus-visible { outline: 2px solid var(--navy-mid); outline-offset: 2px; }
+
+/* ══════════════════════════════════════════════
+   CHAT MESSAGES
+══════════════════════════════════════════════ */
 [data-testid="stChatMessage"] {
   background: transparent;
   border: none;
-  padding: .3rem 0;
-  animation: fadeUp .4s var(--r) both;
-}
-[data-testid="stChatMessageContent"] {
-  font-size: 15px;
-  line-height: 1.72;
-  color: var(--text);
-  font-family: 'DM Sans', sans-serif;
-}
-[data-testid="stChatMessageContent"] p { margin: 0 0 .75rem; }
-[data-testid="stChatMessageContent"] p:last-child { margin-bottom: 0; }
-[data-testid="stChatMessageContent"] strong { color: var(--blue-dark); font-weight: 600; }
-[data-testid="stChatMessageContent"] em { color: var(--text-2); }
-[data-testid="stChatMessageContent"] blockquote {
-  border-left: 3px solid var(--blue-border);
-  margin: .75rem 0;
-  padding: 4px 0 4px 14px;
-  color: var(--text-3);
-  font-style: italic;
-  font-size: 13.5px;
-}
-[data-testid="stChatMessageContent"] ul,
-[data-testid="stChatMessageContent"] ol {
-  padding-left: 1.4rem;
-  margin: .5rem 0 .75rem;
-}
-[data-testid="stChatMessageContent"] li { margin-bottom: .35rem; }
-[data-testid="stChatMessageContent"] h3 {
-  font-family: 'Fraunces', serif;
-  font-size: 15.5px;
-  font-weight: 600;
-  color: var(--blue-dark);
-  margin: 1.1rem 0 .4rem;
-  padding-bottom: 5px;
-  border-bottom: 1px solid var(--blue-border);
-}
-[data-testid="stChatMessageContent"] code {
-  background: var(--blue-light);
-  color: var(--blue-dark);
-  padding: 1px 6px;
-  border-radius: 5px;
-  font-size: 12.5px;
+  padding: 0.2rem 0;
+  animation: fadeUp 0.4s var(--ease) both;
 }
 
 /* User bubble */
 [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {
-  background: var(--blue-light);
-  border: 1px solid var(--blue-border);
-  border-radius: 14px 14px 4px 14px;
-  padding: 13px 18px;
-  margin-left: 60px;
+  background: var(--navy);
+  border-radius: 16px 16px 4px 16px;
+  padding: 14px 20px;
+  margin-left: 80px;
+  box-shadow: var(--shadow-sm);
+}
+
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"])
+[data-testid="stChatMessageContent"] {
+  color: rgba(255,255,255,0.92) !important;
+  font-size: 14.5px;
+  line-height: 1.65;
+}
+
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"])
+[data-testid="stChatMessageContent"] p {
+  color: rgba(255,255,255,0.92) !important;
 }
 
 /* Assistant card */
 [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-top: 3px solid var(--blue);
-  border-radius: 4px 14px 14px 14px;
-  padding: 18px 20px 16px;
+  background: var(--white);
+  border: 1px solid var(--slate-border);
+  border-radius: 4px 16px 16px 16px;
+  padding: 22px 24px 18px;
+  margin-right: 40px;
   box-shadow: var(--shadow-sm);
-  margin-right: 60px;
-  transition: box-shadow .3s var(--r);
+  transition: box-shadow 0.3s var(--ease);
+  position: relative;
 }
+
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"])::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--navy) 0%, var(--navy-mid) 50%, #60a5fa 100%);
+  border-radius: 4px 16px 0 0;
+}
+
 [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]):hover {
   box-shadow: var(--shadow-md);
 }
 
-/* Source + no-provision labels */
+/* Message content typography */
+[data-testid="stChatMessageContent"] {
+  font-size: 14.5px;
+  line-height: 1.75;
+  color: var(--ink-2);
+  font-family: 'Sora', sans-serif;
+  font-weight: 300;
+}
+
+[data-testid="stChatMessageContent"] p { margin: 0 0 0.7rem; }
+[data-testid="stChatMessageContent"] p:last-child { margin-bottom: 0; }
+
+[data-testid="stChatMessageContent"] strong {
+  color: var(--navy);
+  font-weight: 600;
+}
+
+[data-testid="stChatMessageContent"] em {
+  color: var(--slate);
+  font-style: italic;
+}
+
+[data-testid="stChatMessageContent"] blockquote {
+  border-left: 2px solid var(--slate-border);
+  margin: 0.8rem 0;
+  padding: 6px 0 6px 16px;
+  color: var(--slate);
+  font-style: italic;
+  font-size: 13.5px;
+  font-weight: 300;
+  background: var(--slate-light);
+  border-radius: 0 6px 6px 0;
+}
+
+[data-testid="stChatMessageContent"] h3 {
+  font-family: 'Playfair Display', serif;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--navy);
+  margin: 1.25rem 0 0.5rem;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--navy-border);
+  letter-spacing: -0.01em;
+}
+
+[data-testid="stChatMessageContent"] ul,
+[data-testid="stChatMessageContent"] ol {
+  padding-left: 1.5rem;
+  margin: 0.5rem 0 0.75rem;
+}
+
+[data-testid="stChatMessageContent"] li { margin-bottom: 0.4rem; }
+
+[data-testid="stChatMessageContent"] code {
+  background: var(--navy-xlight);
+  color: var(--navy);
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+/* Source chips */
 .lc-src-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  margin-bottom: 13px;
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--slate-border);
 }
+
+.lc-src-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--slate-muted);
+  margin-right: 4px;
+}
+
 .lc-src-chip {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   font-size: 10.5px;
   font-weight: 600;
-  letter-spacing: .08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: white;
-  background: var(--blue);
-  padding: 3px 10px;
-  border-radius: 6px;
+  color: var(--white);
+  background: var(--navy);
+  padding: 4px 11px;
+  border-radius: 4px;
 }
+
 .lc-none-chip {
   font-size: 10.5px;
-  font-weight: 500;
-  color: var(--text-4);
-  background: var(--bg-subtle);
-  border: 1px solid var(--border);
-  padding: 3px 10px;
-  border-radius: 6px;
+  font-weight: 400;
+  color: var(--slate-muted);
+  background: var(--slate-light);
+  border: 1px solid var(--slate-border);
+  padding: 4px 11px;
+  border-radius: 4px;
   font-style: italic;
 }
 
-/* ── Chat input ── */
+/* ══════════════════════════════════════════════
+   CHAT INPUT
+══════════════════════════════════════════════ */
 [data-testid="stChatInput"] {
-  background: var(--card);
-  border: 1.5px solid var(--border);
-  border-radius: 14px;
-  box-shadow: var(--shadow-sm);
-  transition: all .25s var(--r);
+  background: var(--white) !important;
+  border: 1.5px solid var(--slate-border) !important;
+  border-radius: 12px !important;
+  box-shadow: var(--shadow-sm) !important;
+  transition: all 0.25s var(--ease) !important;
 }
+
 [data-testid="stChatInput"]:focus-within {
-  border-color: var(--blue);
-  box-shadow: 0 0 0 3px rgba(30,64,175,.07), var(--shadow-md);
+  border-color: var(--navy-mid) !important;
+  box-shadow: 0 0 0 4px rgba(30,58,138,0.08), var(--shadow-md) !important;
 }
+
 [data-testid="stChatInput"] textarea {
-  color: var(--text) !important;
-  font-size: 15px;
-  font-family: 'DM Sans', sans-serif !important;
+  color: var(--ink) !important;
+  font-size: 14.5px !important;
+  font-family: 'Sora', sans-serif !important;
+  font-weight: 300 !important;
 }
-[data-testid="stChatInput"] textarea::placeholder { color: var(--text-4); }
-[data-testid="stBottomBlockContainer"] { background: transparent; }
 
-/* ── Spinner ── */
+[data-testid="stChatInput"] textarea::placeholder {
+  color: var(--slate-muted) !important;
+}
+
+[data-testid="stBottomBlockContainer"] {
+  background: linear-gradient(to top, var(--white) 75%, transparent) !important;
+  padding-top: 1.5rem !important;
+}
+
+/* ══════════════════════════════════════════════
+   SPINNER
+══════════════════════════════════════════════ */
 [data-testid="stSpinner"] > div > div {
-  border-color: var(--blue-border) !important;
-  border-top-color: var(--blue) !important;
+  border-color: var(--slate-border) !important;
+  border-top-color: var(--navy-mid) !important;
 }
 
-/* ── Footer ── */
-.lc-foot {
-  font-size: 11.5px;
-  color: var(--text-4);
-  text-align: center;
-  margin-top: 2rem;
+/* ══════════════════════════════════════════════
+   FOOTER
+══════════════════════════════════════════════ */
+.lc-footer {
+  font-size: 11px;
   font-weight: 400;
-  line-height: 1.6;
+  color: var(--slate-muted);
+  text-align: center;
+  margin-top: 2.5rem;
+  letter-spacing: 0.04em;
+  line-height: 1.8;
 }
 
-::selection { background: var(--blue); color: #fff; }
-::-webkit-scrollbar { width: 6px; }
+.lc-footer-divider {
+  display: inline-block;
+  margin: 0 8px;
+  opacity: 0.4;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border-s); border-radius: 999px; }
+::-webkit-scrollbar-thumb { background: var(--slate-border); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--slate); }
+
+::selection { background: var(--navy); color: var(--white); }
 </style>
 """, unsafe_allow_html=True)
 
 
-# ── Resource loading ──────────────────────────────────────────────────────────
+# ── Corpus loading ─────────────────────────────────────────────────────────────
 @st.cache_resource
 def get_corpus():
     return corpus.load_corpus()
@@ -373,83 +527,30 @@ CFG, CORPUS_DATA = get_corpus()
 LOADED = dict(CORPUS_DATA)
 
 
-def _api_key() -> str:
+# ── AWS Bedrock client ─────────────────────────────────────────────────────────
+@st.cache_resource
+def get_bedrock_client():
     try:
-        k = st.secrets.get("CEREBRAS_API_KEY", "")
-        return (k.strip() if isinstance(k, str) else "")
+        return boto3.client(
+            service_name="bedrock-runtime",
+            region_name=st.secrets.get("AWS_REGION", "us-east-1"),
+            aws_access_key_id=st.secrets.get("AWS_ACCESS_KEY_ID", ""),
+            aws_secret_access_key=st.secrets.get("AWS_SECRET_ACCESS_KEY", ""),
+        )
     except Exception:
-        return ""
+        return None
 
 
-# ── LLM — streaming ───────────────────────────────────────────────────────────
-def _stream(messages: list[dict], system: str, model: str = MODEL_PRIMARY):
-    """
-    Generator → yields text fragments for st.write_stream.
-    Strips Qwen-3 <think>…</think> blocks on the fly.
-    Falls back to MODEL_FALLBACK on HTTP error.
-    """
-    key = _api_key()
-    if not key:
-        yield "⚠️  Add **CEREBRAS_API_KEY** in *App → Settings → Secrets* to enable answers."
-        return
-
-    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-    msgs = [{"role": "system", "content": system}] + messages
-    body  = {"model": model, "messages": msgs, "max_tokens": 4096,
-             "temperature": 0.15, "stream": True}
-
-    def _iter(m, is_retry=False):
-        body["model"] = m
-        with requests.post(CEREBRAS_URL, headers=headers, json=body,
-                           timeout=120, stream=True) as r:
-            if r.status_code == 429:
-                if not is_retry:
-                    yield "\n_⏳ Token rate limit hit — retrying in 15 seconds…_\n\n"
-                    import time; time.sleep(15)
-                    yield from _iter(MODEL_FALLBACK, is_retry=True)
-                else:
-                    yield (
-                        "⚠️  **Rate limit reached.** The free tier allows 30,000 tokens/minute. "
-                        "Please wait ~60 seconds before asking again."
-                    )
-                return
-            r.raise_for_status()
-            in_think = False
-            for raw in r.iter_lines():
-                if not raw:
-                    continue
-                line = raw.decode() if isinstance(raw, bytes) else raw
-                if not line.startswith("data: "):
-                    continue
-                payload = line[6:]
-                if payload == "[DONE]":
-                    break
-                try:
-                    delta = json.loads(payload)["choices"][0]["delta"].get("content", "")
-                except (json.JSONDecodeError, KeyError):
-                    continue
-                if not delta:
-                    continue
-                if "<think>" in delta:
-                    in_think = True
-                if in_think:
-                    if "</think>" in delta:
-                        in_think = False
-                        delta = delta[delta.index("</think>") + 8:]
-                    else:
-                        continue
-                if delta:
-                    yield delta
-
+def _has_credentials() -> bool:
     try:
-        yield from _iter(model)
-    except requests.HTTPError:
-        yield from _iter(MODEL_FALLBACK)
-    except requests.RequestException as exc:
-        yield f"\n\n⚠️  Connection error: {exc}"
+        k = st.secrets.get("AWS_ACCESS_KEY_ID", "")
+        s = st.secrets.get("AWS_SECRET_ACCESS_KEY", "")
+        return bool(k and s and k.strip() and s.strip())
+    except Exception:
+        return False
 
 
-# ── System prompt ─────────────────────────────────────────────────────────────
+# ── System prompt ──────────────────────────────────────────────────────────────
 SYSTEM = """You are a precise Indian labour law reference assistant for HR professionals and legal teams.
 
 You receive statutory text from India's four Labour Codes and their Central Rules, plus a list of any codes that had NO PROVISION found for the query.
@@ -477,7 +578,7 @@ For every code listed as having NO PROVISION, add one line:
 > *[Code Name] — no provision found on this topic.*
 
 ════════════════════════════════
-BLOCK 3 — CLOSING LINE (write this last, after Block 2 only)
+BLOCK 3 — CLOSING LINE
 ════════════════════════════════
 > ⚖️ Informational reference only — the cited statutory provisions are authoritative.
 
@@ -489,12 +590,64 @@ BLOCK 3 — CLOSING LINE (write this last, after Block 2 only)
 5. Never write Block 3 before Block 2 is complete."""
 
 
-# ── Pipeline ──────────────────────────────────────────────────────────────────
+# ── Streaming via Bedrock ──────────────────────────────────────────────────────
+def _stream(messages: list[dict], system: str):
+    """Generator → yields text fragments for st.write_stream."""
+    client = get_bedrock_client()
+    if not client:
+        yield "⚠️  Could not initialise the AWS Bedrock client. Check your secrets."
+        return
+    if not _has_credentials():
+        yield "⚠️  Add **AWS_ACCESS_KEY_ID**, **AWS_SECRET_ACCESS_KEY**, and **AWS_REGION** in *App → Settings → Secrets*."
+        return
+
+    body = {
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": 4096,
+        "system": system,
+        "messages": messages,
+        "temperature": 0.15,
+    }
+
+    try:
+        response = client.invoke_model_with_response_stream(
+            modelId=MODEL_ID,
+            body=json.dumps(body),
+            contentType="application/json",
+            accept="application/json",
+        )
+        stream = response.get("body")
+        if not stream:
+            yield "⚠️  Empty response from Bedrock."
+            return
+
+        for event in stream:
+            chunk = event.get("chunk")
+            if not chunk:
+                continue
+            payload = json.loads(chunk["bytes"].decode("utf-8"))
+            event_type = payload.get("type", "")
+            if event_type == "content_block_delta":
+                delta = payload.get("delta", {})
+                if delta.get("type") == "text_delta":
+                    text = delta.get("text", "")
+                    if text:
+                        yield text
+            elif event_type == "message_stop":
+                break
+
+    except client.exceptions.ValidationException as e:
+        yield f"\n\n⚠️  Validation error: {e}"
+    except client.exceptions.ModelNotReadyException:
+        yield "\n\n⚠️  Model not ready. Please try again in a moment."
+    except Exception as e:
+        yield f"\n\n⚠️  Bedrock error: {e}"
+
+
+# ── Pipeline helpers ───────────────────────────────────────────────────────────
 def build_prompt(query: str, all_results: dict) -> str:
-    """Assemble the user message: grounding text + no-provision note + question."""
     grounding = corpus.render_all_results(all_results)
     no_prov = [res["meta"]["short"] for res in all_results.values() if not res["found"]]
-
     parts = [f"=== STATUTORY TEXT ===\n{grounding}"]
     if no_prov:
         parts.append(
@@ -507,14 +660,13 @@ def build_prompt(query: str, all_results: dict) -> str:
 
 
 def _correction_html(corrections: list[tuple[str, str]]) -> str:
-    """Build the amber correction-notice HTML."""
     pairs = ", ".join(
         f'<strong>{orig}</strong> → <strong>{fix}</strong>'
         for orig, fix in corrections
     )
     return (
         f'<div class="lc-correction">'
-        f'<span class="lc-correction-icon">✏️</span>'
+        f'<span>✏️</span> '
         f'Interpreted as: {pairs}'
         f'</div>'
     )
@@ -531,33 +683,45 @@ def _submit(q: str):
     st.session_state.pending = q
 
 
-# ── Header ─────────────────────────────────────────────────────────────────────
-chips = "".join(
+# ══════════════════════════════════════════════
+# HERO
+# ══════════════════════════════════════════════
+chips_html = "".join(
     f'<span class="lc-code-chip">{e["meta"]["short"]}</span>'
     for e in LOADED.values()
 )
+
 st.markdown(f"""
-<div class="lc-hero">
-  <div class="lc-pill"><span class="lc-pill-dot"></span>Indian Labour Codes · Legal Reference</div>
-  <h1 class="lc-title">Labour Codes <em>Assistant</em></h1>
-  <p class="lc-sub">Answers grounded in the four Labour Codes and their Central Rules —
-  every response cites the exact Section and Rule number.</p>
-  <div class="lc-codes">{chips}</div>
+<div class="lc-hero-wrap">
+  <div class="lc-eyebrow">
+    <span class="lc-eyebrow-dot"></span>
+    Indian Labour Codes
+    <span class="lc-eyebrow-line"></span>
+    Legal Reference
+  </div>
+  <h1 class="lc-title">Labour Codes<br><span class="lc-title-italic">Assistant</span></h1>
+  <p class="lc-sub">
+    Every answer grounded in the four Labour Codes and their Central Rules —
+    precise Section and Rule citations, every time.
+  </p>
+  <div class="lc-codes">{chips_html}</div>
 </div>
-<div class="lc-divider"></div>
 """, unsafe_allow_html=True)
 
-if not _api_key():
+if not _has_credentials():
     st.markdown(
         '<div class="lc-alert">'
-        '<span class="lc-alert-icon">⚙️</span>'
-        'Add your <b>CEREBRAS_API_KEY</b> in <em>App → Settings → Secrets</em> to enable answers.'
+        '⚙️&nbsp;&nbsp;Add <strong>AWS_ACCESS_KEY_ID</strong>, '
+        '<strong>AWS_SECRET_ACCESS_KEY</strong>, and <strong>AWS_REGION</strong> '
+        'in <em>App → Settings → Secrets</em> to enable answers.'
         '</div>',
         unsafe_allow_html=True,
     )
 
+st.markdown('<div class="lc-rule"></div>', unsafe_allow_html=True)
+
 # ── Chat input ────────────────────────────────────────────────────────────────
-if prompt := st.chat_input("Ask anything… e.g. What are the conditions for retrenchment?"):
+if prompt := st.chat_input("Ask anything — e.g. What are the conditions for retrenchment?"):
     _submit(prompt)
 
 # ── Render history ────────────────────────────────────────────────────────────
@@ -566,23 +730,24 @@ for msg in st.session_state.messages:
         with st.chat_message("user", avatar="👤"):
             st.markdown(msg["content"])
     else:
-        with st.chat_message("assistant", avatar="⚖"):
-            # Correction notice (if any)
+        with st.chat_message("assistant", avatar="⚖️"):
             if msg.get("corrections"):
                 st.markdown(_correction_html(msg["corrections"]), unsafe_allow_html=True)
-            # Source chips row
             src  = msg.get("sources", [])
             none = msg.get("no_provision", [])
             if src or none:
                 src_html  = "".join(f'<span class="lc-src-chip">📋 {s}</span>' for s in src)
                 none_html = "".join(f'<span class="lc-none-chip">∅ {n}</span>' for n in none)
                 st.markdown(
-                    f'<div class="lc-src-row">{src_html}{none_html}</div>',
+                    f'<div class="lc-src-row">'
+                    f'<span class="lc-src-label">Sources</span>'
+                    f'{src_html}{none_html}'
+                    f'</div>',
                     unsafe_allow_html=True,
                 )
             st.markdown(msg["content"])
 
-# ── Sample questions (only when no history and nothing pending) ───────────────
+# ── Sample questions ──────────────────────────────────────────────────────────
 if not st.session_state.messages and not st.session_state.pending:
     st.markdown('<div class="lc-samples-label">Try asking</div>', unsafe_allow_html=True)
     samples = [
@@ -602,34 +767,31 @@ if st.session_state.pending:
     raw_q = st.session_state.pending
     st.session_state.pending = None
 
-    # ── Step 1: Typo correction ──
     corrected_q, corrections = corpus.correct_query(raw_q)
 
-    # Show user message (original text)
     st.session_state.messages.append({"role": "user", "content": raw_q})
     with st.chat_message("user", avatar="👤"):
         st.markdown(raw_q)
 
-    # ── Step 2: Search all codes using corrected query ──
     with st.spinner("Searching the codes…"):
         all_results = corpus.search_all(LOADED, corrected_q, k=4)
 
     sources      = [res["meta"]["short"] for res in all_results.values() if res["found"]]
     no_provision = [res["meta"]["short"] for res in all_results.values() if not res["found"]]
+    user_msg     = build_prompt(corrected_q, all_results)
 
-    user_msg = build_prompt(corrected_q, all_results)
-
-    with st.chat_message("assistant", avatar="⚖"):
-        # Correction notice
+    with st.chat_message("assistant", avatar="⚖️"):
         if corrections:
             st.markdown(_correction_html(corrections), unsafe_allow_html=True)
 
-        # Source/no-provision chips
         if sources or no_provision:
             src_html  = "".join(f'<span class="lc-src-chip">📋 {s}</span>' for s in sources)
             none_html = "".join(f'<span class="lc-none-chip">∅ {n}</span>' for n in no_provision)
             st.markdown(
-                f'<div class="lc-src-row">{src_html}{none_html}</div>',
+                f'<div class="lc-src-row">'
+                f'<span class="lc-src-label">Sources</span>'
+                f'{src_html}{none_html}'
+                f'</div>',
                 unsafe_allow_html=True,
             )
 
@@ -657,9 +819,11 @@ if st.session_state.pending:
 
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown(
-    '<div class="lc-foot">'
-    'Informational reference for HR &amp; Legal teams · '
-    'Powered by Cerebras + Qwen-3 · '
+    '<div class="lc-footer">'
+    'Informational reference for HR &amp; Legal teams'
+    '<span class="lc-footer-divider">·</span>'
+    'Powered by Claude Sonnet 4.6 via AWS Bedrock'
+    '<span class="lc-footer-divider">·</span>'
     'Cited statutory provisions are authoritative'
     '</div>',
     unsafe_allow_html=True,
