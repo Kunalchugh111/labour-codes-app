@@ -67,7 +67,7 @@ OLD_ACTS = {
         ("The Cine-Workers and Cinema Theatre Workers (Regulation of Employment) Act, 1981",
          1981, "osh"),
     "dock_workers_shw":
-        ("The Dock Workers (Safety, Health and Welfare) Act, 1986", 1986, "osh"),
+        ("The Dock Workers (Safety, Health and Welfare) Regulations, 1990", 1990, "osh"),
     "bocw_recs":
         ("The Building and Other Construction Workers (Regulation of Employment and "
          "Conditions of Service) Act, 1996", 1996, "osh"),
