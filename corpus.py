@@ -74,13 +74,23 @@ def correct_query(q: str) -> tuple[str, list[tuple[str, str]]]:
     corrected_tokens: list[str] = []
     for token in tokens:
         clean = re.sub(r"[^a-z]", "", token.lower())
+        cand = None
         if len(clean) >= 5 and clean not in STOP and clean not in LEGAL_VOCABULARY:
-            matches = get_close_matches(clean, LEGAL_VOCABULARY, n=1, cutoff=0.72)
-            if matches and matches[0] != clean:
-                corrections.append((token, matches[0]))
-                corrected_tokens.append(matches[0])
-                continue
-        corrected_tokens.append(token)
+            m = get_close_matches(clean, LEGAL_VOCABULARY, n=1, cutoff=0.9)
+            if m:
+                w = m[0]
+                # only treat as a genuine typo: same first letter, near-equal length,
+                # and NOT a mere plural/singular variant of a real word
+                plural = (clean.rstrip("s") == w.rstrip("s")
+                          or clean + "s" == w or w + "s" == clean)
+                if (w != clean and w[0] == clean[0]
+                        and abs(len(w) - len(clean)) <= 2 and not plural):
+                    cand = w
+        if cand:
+            corrections.append((token, cand))
+            corrected_tokens.append(cand)
+        else:
+            corrected_tokens.append(token)
     return " ".join(corrected_tokens), corrections
 
 
@@ -315,6 +325,79 @@ def quote_supported(quote: str, grounding_norm: str) -> bool:
         f = normalize_for_match(quote)
         return len(f) >= 12 and f in grounding_norm
     return all(f in grounding_norm for f in frags)
+
+
+# ── Full-corpus index: verify quotes & resolve citations to the real provision ───
+_NAME_STOP = {"the", "on", "and", "of", "for", "to", "in", "a", "an", "central", "rules", "rule"}
+_FULLNORM_CACHE: dict = {}
+_INDEX_CACHE: dict = {}
+
+
+def _name_tokens(name: str) -> set:
+    # keep 'code'/'act'/'regulations' — they distinguish a current Code from an old Act
+    return {w for w in re.findall(r"[a-z]+", (name or "").lower()) if w not in _NAME_STOP}
+
+
+def full_corpus_norm(corpus_dict: dict) -> str:
+    """Normalised text of the ENTIRE corpus (Codes + Rules + old Acts), cached. A quote is
+    'real statute' iff it appears here — used so retrieval misses don't cause false ⚠ flags."""
+    key = id(corpus_dict)
+    if key not in _FULLNORM_CACHE:
+        parts = []
+        for e in corpus_dict.values():
+            parts += [ch["text"] for ch in e["chunks"]]
+            for oa in e.get("old_acts", []):
+                parts += [ch["text"] for ch in oa["chunks"]]
+        _FULLNORM_CACHE[key] = normalize_for_match(" ".join(parts))
+    return _FULLNORM_CACHE[key]
+
+
+def _index(corpus_dict: dict):
+    """Build (provisions, resolvers): provisions[(key, kind, num)] -> text;
+    resolvers = [(key, name_token_set)] for matching a citation's Code/Act name."""
+    key = id(corpus_dict)
+    if key in _INDEX_CACHE:
+        return _INDEX_CACHE[key]
+    provisions, resolvers = {}, []
+
+    def add(k, name, chunks):
+        resolvers.append((k, _name_tokens(name)))
+        for ch in chunks:
+            if ch.get("num") is not None:
+                kind = "rule" if ch["label"].lower().startswith("rule") else "section"
+                provisions.setdefault((k, kind, ch["num"]), ch["text"])
+
+    for cid, e in corpus_dict.items():
+        m = e["meta"]
+        add(cid, f'{m["title"]} {m["short"]}', e["chunks"])
+        for oa in e.get("old_acts", []):
+            add("old:" + oa["meta"]["slug"], oa["meta"]["title"], oa["chunks"])
+    _INDEX_CACHE[key] = (provisions, resolvers)
+    return provisions, resolvers
+
+
+def lookup_citation(corpus_dict: dict, citation: str):
+    """Return the actual statutory text for a citation like 'Section 62 — The Code on Social
+    Security, 2020' / 'Rule 50 — Industrial Relations Code' / 'Section 25 — Industrial Disputes
+    Act, 1947'. None if it can't be resolved. ('25N' resolves to §25.)"""
+    if not citation:
+        return None
+    m = re.search(r"\b(section|rule|regulation)\s+(\d{1,3})", citation.lower())
+    if not m:
+        return None
+    kind = "rule" if m.group(1) in ("rule", "regulation") else "section"
+    num = int(m.group(2))
+    name = re.split(r"[—–-]", citation, 1)
+    qt = _name_tokens(name[1] if len(name) > 1 else citation)
+    provisions, resolvers = _index(corpus_dict)
+    best, score = None, 0
+    for k, toks in resolvers:
+        s = len(qt & toks)
+        if s > score:
+            best, score = k, s
+    if best is None or score < 1:
+        return None
+    return provisions.get((best, kind, num))
 
 
 _MAX_CHUNK_CHARS = 3000

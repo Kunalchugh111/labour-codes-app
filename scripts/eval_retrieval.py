@@ -33,6 +33,8 @@ GOLD = [
     ("can women be required to work night shifts in a factory", "osh", []),
     ("contract labour regulation and abolition", "osh", []),
     ("welfare facilities like canteen and creche", "osh", []),
+    ("when can i strike", "ir", []),                 # regression: was mis-routed to Wages/OSH
+    ("notice for a strike or lock-out", "ir", []),
 ]
 
 COMPARISON = [   # (query, expected_code, old-Act keyword that should appear in old hits)
@@ -91,6 +93,34 @@ def main():
         passed, failed = (passed + 1, failed) if ok else (passed, failed + 1)
         if not ok:
             fails.append(f"guardrail: {name}")
+        print(f"  [{'ok ' if ok else 'FAIL'}] {name}")
+
+    print("\n── REGRESSIONS (real-use bugs) ──")
+    full = corpus.full_corpus_norm(c)
+    reg = [
+        ("spell-corrector leaves 'working conditions' intact",
+         corpus.correct_query("working conditions")[0] == "working conditions"),
+        ("spell-corrector leaves 'obligations' intact",
+         "obligations" in corpus.correct_query("my obligations")[0]),
+        ("'when can i strike' top code is IR",
+         max(c, key=lambda cid: corpus._code_relevance(c[cid], "when can i strike")) == "ir"),
+        ("citation lookup returns the real §62 text",
+         "maternity benefit" in (corpus.lookup_citation(
+             c, "Section 62 — The Code on Social Security, 2020") or "").lower()),
+        ("citation lookup resolves an old-Act citation (Industrial Disputes §25)",
+         bool(corpus.lookup_citation(c, "Section 25 — The Industrial Disputes Act, 1947"))),
+        ("full-corpus guardrail accepts a real §62 quote",
+         corpus.quote_supported(
+             "Any woman employed in an establishment and entitled to maternity benefit under "
+             "the provisions of this Chapter may give notice in writing", full) is True),
+        ("guardrail still rejects a fabricated quote",
+         corpus.quote_supported(
+             "The employer shall grant a unicorn allowance of fifty per cent each fortnight", full) is False),
+    ]
+    for name, ok in reg:
+        passed, failed = (passed + 1, failed) if ok else (passed, failed + 1)
+        if not ok:
+            fails.append(f"regression: {name}")
         print(f"  [{'ok ' if ok else 'FAIL'}] {name}")
 
     print(f"\n=== {passed} passed, {failed} failed ===")
