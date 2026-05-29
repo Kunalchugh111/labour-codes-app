@@ -3,6 +3,7 @@ corpus.py — load the processed code/rules text, split it into citable chunks
 (Sections, Rules, Schedules), and retrieve only the slices relevant to a query.
 """
 import json
+import math
 import re
 from difflib import get_close_matches
 from pathlib import Path
@@ -147,6 +148,17 @@ def load_corpus():
             for ch in parse_doc(rules, "rules"):
                 ch["source"] = c["central_rules"]["title"]
                 entry["chunks"].append(ch)
+        # repealed Acts this Code subsumed (for "what changed" comparisons)
+        entry["old_acts"] = []
+        for oa in c.get("old_acts", []):
+            txt = _read(oa["file"])
+            if not txt:
+                continue
+            chunks = parse_doc(txt, "code")
+            for ch in chunks:
+                ch["source"] = oa["title"]
+            if chunks:
+                entry["old_acts"].append({"meta": oa, "chunks": chunks})
         corpus[c["id"]] = entry
     return cfg, corpus
 
@@ -170,41 +182,118 @@ def _terms(q: str) -> list[str]:
     return list(expanded)
 
 
-_MIN_SCORE = 5
+_MIN_SCORE = 0.45      # floor on the length-normalised score
+_GATE_REL  = 0.8       # a code must reach this fraction of the best code's relevance…
+_GATE_REL_DEF = 0.5    # …relaxed for definitional queries (cross-code comparison is wanted)
+_GATE_ABS  = 1.5       # …and this absolute relevance, to be included (best code always kept)
 
 
-def search(entry: dict, query: str, k: int = 8, min_score: int = _MIN_SCORE) -> list[dict]:
+def _wlen(ch: dict) -> int:
+    w = ch.get("_wlen")
+    if w is None:
+        w = len(re.findall(r"\S+", ch["text"])) or 1
+        ch["_wlen"] = w
+    return w
+
+
+def _score_chunk(ch: dict, terms: list[str], explicit: set[int], definitional: bool) -> float:
+    low = ch["text"].lower()
+    prev = ch["preview"].lower()
+    raw = 0.0
+    for t in terms:
+        c = low.count(t)
+        if c:
+            raw += min(c, 3)          # saturate repeated terms
+            if t in prev:
+                raw += 1.5            # reward early / heading mentions
+    # length-normalise so long definition/admin chunks don't dominate everything
+    score = raw / (1.0 + math.log(1.0 + _wlen(ch)))
+    if ch["num"] == 2 and ch["label"].startswith("Section") and not definitional:
+        score *= 0.5                  # the definitions section is a noise magnet
+    if definitional and ch["num"] == 2:
+        score += 2.0
+    if ch["num"] in explicit:
+        score += 1000.0               # user named this Section/Rule explicitly
+    return score
+
+
+def _score_list(chunks: list[dict], query: str):
     terms = _terms(query)
     explicit = {int(n) for n in re.findall(r"(?:section|rule)\s+(\d{1,3})", query.lower())}
     definitional = bool(re.search(r"\b(defin|meaning|means|what is|who is)\b", query.lower()))
-
-    scored: list[tuple[int, dict]] = []
-    for ch in entry["chunks"]:
-        low = ch["text"].lower()
-        score = sum(low.count(t) for t in terms)
-        score += 3 * sum(1 for t in terms if t in ch["preview"].lower())
-        if ch["num"] in explicit:
-            score += 100
-        if definitional and ch["num"] == 2:
-            score += 8
-        if score >= min_score:
-            scored.append((score, ch))
-
+    scored = [(_score_chunk(ch, terms, explicit, definitional), ch) for ch in chunks]
     scored.sort(key=lambda x: x[0], reverse=True)
-    picks = [ch for _, ch in scored[:k]]
-    if definitional and not any(c["num"] == 2 for c in picks):
-        d = next((c for c in entry["chunks"] if c["num"] == 2), None)
+    return scored, definitional
+
+
+def _scored(entry: dict, query: str):
+    return _score_list(entry["chunks"], query)
+
+
+def _code_relevance(entry: dict, query: str) -> float:
+    # sum of the top-3 chunk scores — a truly relevant code has several strong hits,
+    # a noise code has at most one mediocre one.
+    scored, _ = _scored(entry, query)
+    return sum(s for s, _ in scored[:3])
+
+
+def search(entry: dict, query: str, k: int = 8, min_score: float = _MIN_SCORE) -> list[dict]:
+    scored, definitional = _scored(entry, query)
+    scored = [(s, c) for s, c in scored if s >= min_score]
+    picks = scored[:k]
+
+    # reserve up to 2 slots for Rules that are genuinely relevant (not noise) so the
+    # procedural Rule surfaces alongside its Section
+    n_rules = sum(1 for _, c in picks if c["label"].startswith("Rule"))
+    if n_rules < 2 and picks:
+        floor = 0.45 * picks[0][0]
+        chosen = {id(c) for _, c in picks}
+        extra = [(s, c) for s, c in scored
+                 if c["label"].startswith("Rule") and id(c) not in chosen
+                 and s >= floor][:2 - n_rules]
+        if extra:
+            slots = [i for i, (_, c) in enumerate(picks) if not c["label"].startswith("Rule")]
+            for pair in extra:
+                if slots:
+                    picks[slots.pop()] = pair        # replace lowest-scoring Section
+                else:
+                    picks.append(pair)
+            picks.sort(key=lambda x: x[0], reverse=True)
+            picks = picks[:k]
+
+    result = [c for _, c in picks]
+
+    # always include the definitions Section for "what is X" queries
+    if definitional and not any(c["num"] == 2 and c["label"].startswith("Section") for c in result):
+        d = next((c for c in entry["chunks"]
+                  if c["num"] == 2 and c["label"].startswith("Section")), None)
         if d:
-            picks.insert(0, d)
-    return picks
+            result = [d] + result[:k - 1]
+    return result[:k]
 
 
 def search_all(corpus_dict: dict, query: str, k: int = 8) -> dict:
-    return {
-        cid: {"chunks": chunks, "found": bool(chunks), "meta": entry["meta"]}
-        for cid, entry in corpus_dict.items()
-        for chunks in [search(entry, query, k=k)]
-    }
+    # Route: only include codes whose best match clears the gate (best code always kept).
+    tops = {cid: _code_relevance(e, query) for cid, e in corpus_dict.items()}
+    best = max(tops.values(), default=0.0)
+    definitional = bool(re.search(r"\b(defin|meaning|means|what is|who is)\b", query.lower()))
+    gate = max(best * (_GATE_REL_DEF if definitional else _GATE_REL), _GATE_ABS)
+    out = {}
+    for cid, entry in corpus_dict.items():
+        keep = tops[cid] >= gate or tops[cid] >= best
+        chunks = search(entry, query, k=k) if keep else []
+        out[cid] = {"chunks": chunks, "found": bool(chunks), "meta": entry["meta"]}
+    return out
+
+
+def search_old(entry: dict, query: str, k: int = 6, min_score: float = _MIN_SCORE) -> list[dict]:
+    """Top provisions from the repealed Acts this Code subsumed, relevant to the query.
+    Used to ground 'what changed vs the old Act' comparisons."""
+    chunks = [ch for oa in entry.get("old_acts", []) for ch in oa["chunks"]]
+    if not chunks:
+        return []
+    scored, _ = _score_list(chunks, query)
+    return [c for s, c in scored[:k] if s >= min_score]
 
 
 _MAX_CHUNK_CHARS = 3000

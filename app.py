@@ -560,6 +560,42 @@ blockquote.lc-auth-quote {
   margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--parchment-3);
 }
 
+/* ══ OLD ↔ NEW COMPARISON ═══════════════════════════════════════════════════ */
+.lc-cmp-headline {
+  font-family: 'Playfair Display', serif; font-size: 16px; font-weight: 700;
+  color: var(--navy); background: var(--gold-pale); border: 1px solid var(--gold-border);
+  border-radius: 10px; padding: 13px 18px; margin-bottom: 18px; line-height: 1.5;
+}
+.lc-cmp-topic {
+  font-size: 10px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--slate-3); margin: 6px 0 8px;
+}
+.lc-cmp-card {
+  border-radius: 10px; padding: 13px 15px; height: 100%;
+  border: 1px solid var(--slate-5); background: var(--white);
+}
+.lc-cmp-card.old { background: var(--parchment-2); border-color: var(--parchment-3); }
+.lc-cmp-card.new { background: #F4F7FF; border-color: #C9D6F5; }
+.lc-cmp-tag {
+  font-size: 9.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.lc-cmp-tag.old { color: var(--slate-2); }
+.lc-cmp-tag.new { color: var(--navy); }
+.lc-cmp-body { font-size: 13.5px; line-height: 1.6; color: var(--ink-2); }
+.lc-cmp-card.old .lc-cmp-body { color: var(--slate); }
+.lc-cmp-cite {
+  font-size: 10.5px; font-weight: 600; color: var(--slate-2);
+  margin-top: 8px; padding-top: 7px; border-top: 1px dashed var(--slate-5);
+}
+.lc-cmp-card.new .lc-cmp-cite { color: var(--navy); }
+.lc-cmp-impact {
+  font-size: 13px; line-height: 1.55; color: var(--ink-2);
+  background: var(--gold-pale); border-left: 3px solid var(--gold);
+  border-radius: 0 8px 8px 0; padding: 9px 14px; margin: 10px 0 22px;
+}
+.lc-cmp-impact span { color: var(--amber); font-weight: 700; }
+
 /* ══ CHAT MESSAGES ══════════════════════════════════════════════════════════ */
 [data-testid="stChatMessage"] {
   background: transparent !important;
@@ -822,6 +858,8 @@ Field rules:
 - type "info": fill "answer" and "key_points" (3-5). Set "verdict" to null, "requirements" to []
   and "actions" to [].
 - "authorities": ALWAYS list the provisions you relied on; each "quote" is VERBATIM statutory text.
+  When a Central Rule prescribes the procedure, forms, timelines, registers or rates for a Section
+  you rely on, include that Rule in "authorities" as well as the Section — cite both.
 
 ABSOLUTE RULES:
 - NEVER invent or paraphrase statutory text. "authorities[].quote" must be verbatim from the
@@ -831,6 +869,39 @@ ABSOLUTE RULES:
   "summary"/"answer".
 - Keep plain-English fields jargon-free, direct, and specific (numbers, days, thresholds).
 - Output VALID JSON. Escape quotes and newlines inside strings. No text outside the JSON object."""
+
+
+COMPARISON_SYSTEM = """You are an expert Indian Labour Law assistant for HR managers.
+
+You receive: statutory text from the CURRENT Code(s) in force, statutory text from the PREVIOUS
+(now-repealed) Act(s), and the HR manager's question about WHAT CHANGED.
+
+Respond with a SINGLE JSON object and NOTHING else — no prose, no markdown, no ``` fences:
+{
+  "type": "comparison",
+  "headline": "one plain-English sentence naming the single most important change",
+  "changes": [
+    {
+      "topic": "short label (e.g. 'Retrenchment notice')",
+      "old": "what the PREVIOUS Act required — plain English, exact numbers/thresholds",
+      "old_cite": "Section X — [previous Act name, year]",
+      "new": "what the CURRENT Code requires — plain English, exact numbers/thresholds",
+      "new_cite": "Section X / Rule X — [Code name]",
+      "impact": "what the HR manager must actually do differently now"
+    }
+  ],
+  "authorities": [{"citation": "Section X — [Act/Code]", "quote": "exact verbatim statutory text"}]
+}
+
+RULES:
+- Give the 2-4 changes that matter most to HR. Be concrete: days, amounts, thresholds, percentages.
+- "old"/"old_cite" come ONLY from the PREVIOUS-law text; "new"/"new_cite" ONLY from the
+  CURRENT-law text. Never swap them.
+- If the previous law had no equivalent provision, set "old" to "No equivalent provision" and
+  "old_cite" to "".
+- authorities[].quote is VERBATIM from the supplied text only — never invent or paraphrase statute.
+- Rely only on the supplied excerpts; use outside knowledge for nothing.
+- Output VALID JSON. Escape quotes and newlines. No text outside the JSON object."""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -927,25 +998,43 @@ def _parse_answer(text: str) -> dict:
     return {"_raw": text or ""}
 
 
-def generate_answer(messages: list[dict]) -> dict:
-    """Ask the model for a structured answer (non-streaming Converse) and parse it."""
+def _converse_json(system: str, user_text: str) -> dict:
+    """Single non-streaming Converse call returning parsed JSON (or a raw-text fallback)."""
     client = get_bedrock_client()
     if not client:
         return {"_raw": "⚠️ Bedrock client error. Check secrets."}
     if not _has_key():
         return {"_raw": "⚠️ Add **AWS_BEARER_TOKEN_BEDROCK** and **AWS_REGION** in "
                         "*App → Settings → Secrets*."}
-    convo = [{"role": m["role"], "content": [{"text": m["content"]}]} for m in messages]
     try:
         resp = client.converse(
             modelId=_model_id(),
-            system=[{"text": SYSTEM}],
-            messages=convo,
+            system=[{"text": system}],
+            messages=[{"role": "user", "content": [{"text": user_text}]}],
             inferenceConfig={"maxTokens": 4096, "temperature": 0.1},
         )
         return _parse_answer(resp["output"]["message"]["content"][0]["text"])
     except Exception as e:
         return {"_raw": _friendly_bedrock_error(e)}
+
+
+def generate_answer(messages: list[dict]) -> dict:
+    """Structured single answer (verdict / info)."""
+    return _converse_json(SYSTEM, messages[-1]["content"])
+
+
+def generate_comparison(user_text: str) -> dict:
+    """Old-Act vs new-Code 'what changed' comparison."""
+    return _converse_json(COMPARISON_SYSTEM, user_text)
+
+
+_COMPARE_RE = re.compile(
+    r"\b(what changed|has changed|changed (?:from|since|in)|old act|old law|earlier law|"
+    r"previously|before the code|used to|compared to|comparison|difference|differ|"
+    r"new vs old|old vs new|replaced|repeal)\b", re.I)
+
+def _is_comparison(query: str) -> bool:
+    return bool(_COMPARE_RE.search(query))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -962,6 +1051,20 @@ def build_prompt(query: str, all_results: dict) -> str:
         )
     parts.append(f"=== QUESTION ===\n{query}")
     return "\n\n".join(parts)
+
+def build_comparison_prompt(query: str, all_results: dict) -> str:
+    new_g = corpus.render_all_results(all_results)
+    olds = []
+    for cid, r in all_results.items():
+        if not r["found"]:
+            continue
+        oc = corpus.search_old(LOADED[cid], query, k=6)
+        if oc:
+            olds.append(corpus.render_chunks(oc))
+    old_g = "\n\n".join(olds) if olds else "(No repealed-Act text found for this topic.)"
+    return (f"=== CURRENT LAW (in force) ===\n{new_g}\n\n"
+            f"=== PREVIOUS LAW (repealed Acts) ===\n{old_g}\n\n"
+            f"=== QUESTION ===\n{query}")
 
 def _correction_html(corrections):
     pairs = ", ".join(
@@ -995,9 +1098,53 @@ def _esc_ml(x) -> str:
 def _bullets(items) -> str:
     return "".join(f"<li>{_esc(x)}</li>" for x in items if str(x).strip())
 
+def render_comparison(data: dict):
+    """Render an old-Act ↔ new-Code comparison: headline, per-change old|new columns,
+    an impact line, and the verbatim provisions."""
+    hl = str(data.get("headline", "")).strip()
+    if hl:
+        st.markdown(f'<div class="lc-cmp-headline">🔄 {_esc(hl)}</div>', unsafe_allow_html=True)
+    for ch in (data.get("changes") or []):
+        if not isinstance(ch, dict):
+            continue
+        st.markdown(f'<div class="lc-cmp-topic">{_esc(ch.get("topic", "Change"))}</div>',
+                    unsafe_allow_html=True)
+        col_old, col_new = st.columns(2)
+        with col_old:
+            st.markdown(
+                f'<div class="lc-cmp-card old"><div class="lc-cmp-tag old">◂ Previously</div>'
+                f'<div class="lc-cmp-body">{_esc(ch.get("old", "—"))}</div>'
+                f'<div class="lc-cmp-cite">{_esc(ch.get("old_cite", "")) or "—"}</div></div>',
+                unsafe_allow_html=True)
+        with col_new:
+            st.markdown(
+                f'<div class="lc-cmp-card new"><div class="lc-cmp-tag new">Now, in force ▸</div>'
+                f'<div class="lc-cmp-body">{_esc(ch.get("new", "—"))}</div>'
+                f'<div class="lc-cmp-cite">{_esc(ch.get("new_cite", "")) or "—"}</div></div>',
+                unsafe_allow_html=True)
+        impact = str(ch.get("impact", "")).strip()
+        if impact:
+            st.markdown(
+                f'<div class="lc-cmp-impact"><span>What to do&nbsp;→</span> {_esc(impact)}</div>',
+                unsafe_allow_html=True)
+    auths = [a for a in (data.get("authorities") or [])
+             if isinstance(a, dict) and str(a.get("quote", "")).strip()]
+    if auths:
+        with st.expander("📜  Show statutory text (old & new)"):
+            for a in auths:
+                st.markdown(
+                    f'<div class="lc-auth-cite">{_esc(a.get("citation") or "Provision")}</div>'
+                    f'<blockquote class="lc-auth-quote">{_esc_ml(a.get("quote", ""))}</blockquote>',
+                    unsafe_allow_html=True)
+    st.markdown(f'<div class="lc-disclaimer">{DISCLAIMER}</div>', unsafe_allow_html=True)
+
+
 def render_answer(data: dict):
     """Render a structured answer as scannable cards (verdict / points / actions /
     collapsible authorities). Falls back to markdown for unstructured replies."""
+    if isinstance(data, dict) and data.get("type") == "comparison" and "_raw" not in data:
+        render_comparison(data)
+        return
     if not isinstance(data, dict) or "_raw" in data:
         st.markdown(data.get("_raw", "") if isinstance(data, dict) else str(data))
         st.markdown(f'<div class="lc-disclaimer">{DISCLAIMER}</div>', unsafe_allow_html=True)
@@ -1151,6 +1298,30 @@ def _demo_param():
 
 if _demo_param():
     _demo_samples = [
+        {
+            "type": "comparison",
+            "headline": "The threshold for needing Government permission to retrench rose from 100 to 300 workers.",
+            "changes": [
+                {"topic": "Government permission to retrench",
+                 "old": "Establishments with 100 or more workmen needed prior Government permission to retrench.",
+                 "old_cite": "Section 25N — Industrial Disputes Act, 1947",
+                 "new": "The threshold is raised to 300 or more workers (Government may raise it further).",
+                 "new_cite": "Section 65 — Industrial Relations Code, 2020",
+                 "impact": "Establishments with 100–299 workers no longer need prior permission — but still owe notice and compensation."},
+                {"topic": "Notice & compensation",
+                 "old": "One month's notice (or wages in lieu) and 15 days' average pay per completed year.",
+                 "old_cite": "Section 25F — Industrial Disputes Act, 1947",
+                 "new": "Retained: one month's notice (or wages in lieu) and 15 days' wages per completed year.",
+                 "new_cite": "Section 70 — Industrial Relations Code, 2020",
+                 "impact": "No change here — keep paying notice + 15 days/year."},
+            ],
+            "authorities": [
+                {"citation": "Section 25N — Industrial Disputes Act, 1947",
+                 "quote": "No workman employed in any industrial establishment to which this Chapter applies, who has been in continuous service for not less than one year … shall be retrenched … until the prior permission of the appropriate Government … has been obtained …"},
+                {"citation": "Section 65 — Industrial Relations Code, 2020",
+                 "quote": "No worker employed in any industrial establishment to which this Chapter applies … shall be retrenched until the prior permission of the appropriate Government is obtained, where such establishment employed not less than three hundred workers …"},
+            ],
+        },
         {
             "type": "compliance",
             "verdict": {"status": "non-compliant",
@@ -1324,6 +1495,9 @@ if st.session_state.pending:
                     f"No relevant provisions found across **{names}** for this query. "
                     "Try rephrasing or ask about a specific Section or topic."
                 )}
+            elif _is_comparison(corrected_q):
+                with st.spinner("Comparing the old Act with the new Code…"):
+                    data = generate_comparison(build_comparison_prompt(corrected_q, all_results))
             else:
                 with st.spinner("Analysing the statute…"):
                     data = generate_answer([{"role": "user", "content": user_msg}])
