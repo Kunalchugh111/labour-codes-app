@@ -6,12 +6,14 @@ knowledge, and asks **which code** when a term (e.g. "wages") differs across cod
 End users open one link and type — no key, no setup for them.
 
 ## How it works
-1. **Route** (Gemini) — picks the relevant code, or asks "which code?" when ambiguous.
-2. **Retrieve** (local Python) — pulls only the relevant Sections/Rules from that code,
-   so every question stays small and fast no matter how large the source is.
-3. **Answer** (Gemini) — answers strictly from those slices, citing exact Sections/Rules.
+1. **Clarify** (Claude) — asks one short "which code?"-style question only when the
+   query is ambiguous; otherwise answers straight away.
+2. **Retrieve** (local Python) — pulls only the relevant Sections/Rules from across the
+   four codes, so every question stays small and fast no matter how large the source is.
+3. **Answer** (Claude) — answers strictly from those slices, citing exact Sections/Rules.
 
-Your Gemini keys live in Streamlit **Secrets** (server-side) and are rotated automatically.
+The model is **Claude Sonnet 4.6 on AWS Bedrock**. Your Bedrock API key lives in
+Streamlit **Secrets** (server-side); end users never see or need it.
 
 ## What's already done
 Three codes are processed and built in: **Code on Wages 2019**, **Industrial Relations
@@ -22,14 +24,30 @@ Drop these into `documents/pdfs/` and run `python ingest.py`:
 OSH & WC Code 2020, and the four Central Rules (Wages, IR, Social Security, OSH).
 Filenames are matched by keyword, so exact names aren't needed.
 
+## One-time AWS Bedrock setup
+Claude on Bedrock needs a **paid AWS account** (a valid card on file). There is no longer
+a "Model access" button — AWS enables foundation models by default — so instead:
+1. **Billing → Payment preferences** — add a valid card.
+2. **Amazon Bedrock → Playground**, region **Asia Pacific (Mumbai) `ap-south-1`** → pick
+   **Claude Sonnet 4.6** → submit the one-time **use-case form** → send a test message.
+   That first call creates the AWS Marketplace subscription for the model.
+3. **Bedrock → API keys** → create a long-term key to use as `AWS_BEARER_TOKEN_BEDROCK`.
+   The key's identity needs `bedrock:InvokeModel*` plus `aws-marketplace:Subscribe` and
+   `aws-marketplace:ViewSubscriptions`.
+
+> Mumbai reaches Claude only through the **global** inference profile
+> (`global.anthropic.claude-sonnet-4-6`), which is already the default in `app.py`.
+
 ## Deploy (one-time)
 1. Create a **private** GitHub repo and push this folder.
 2. Go to share.streamlit.io → "New app" → pick the repo → main file `app.py` → Deploy.
-3. App → Settings → **Secrets**, paste (comma-separate as many keys as you have):
+3. App → Settings → **Secrets**, paste:
    ```
-   GEMINI_API_KEYS = "key1,key2,key3"
+   AWS_BEARER_TOKEN_BEDROCK = "your-bedrock-api-key"
+   AWS_REGION = "ap-south-1"
+   # optional — overrides the default model:
+   # BEDROCK_MODEL_ID = "global.anthropic.claude-sonnet-4-6"
    ```
-   Free keys (no card): https://aistudio.google.com/apikey
 4. App → **Share** → add your HR team's email addresses as viewers. Because the repo is
    private, only people you invite can open the link.
 
@@ -39,12 +57,15 @@ repo and Streamlit redeploys automatically.
 ## Run locally (optional)
 ```
 pip install -r requirements.txt
-cp .streamlit/secrets.toml.example .streamlit/secrets.toml   # add your keys
+mkdir -p .streamlit
+cat > .streamlit/secrets.toml <<'EOF'
+AWS_BEARER_TOKEN_BEDROCK = "your-bedrock-api-key"
+AWS_REGION = "ap-south-1"
+EOF
 streamlit run app.py
 ```
 
 ## Note
 Informational reference for HR. The cited provision in the Code or Rules is the
 authoritative text; for a contested interpretation, consult a qualified professional.
-For sensitive queries, use a **paid** Gemini key (the free tier may use prompts for training).
-```
+Bedrock usage is billed per token to your AWS account.
