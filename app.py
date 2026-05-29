@@ -8,6 +8,7 @@ Design  : Legal editorial — deep navy, parchment, gold accent
 import json
 import os
 import re
+import html
 import boto3
 import streamlit as st
 
@@ -483,6 +484,82 @@ section[data-testid="stBottom"] > div {
 .lc-verdict.non-compliant { background: var(--red-bg);   border-color: var(--red-b);   color: var(--red); }
 .lc-verdict.partial       { background: var(--amber-bg); border-color: var(--amber-b); color: var(--amber); }
 
+/* ══ ANSWER CARDS ═══════════════════════════════════════════════════════════ */
+.lc-block { margin-bottom: 16px; animation: fadeUp .35s var(--ease) both; }
+.lc-section-label {
+  font-size: 9.5px; font-weight: 700; letter-spacing: .2em;
+  text-transform: uppercase; color: var(--slate-3); margin-bottom: 9px;
+}
+.lc-lead {
+  font-size: 15px; line-height: 1.75; color: var(--ink-2); font-weight: 400;
+  margin-bottom: 18px; padding: 2px 0 2px 16px;
+  border-left: 3px solid var(--navy-3);
+  animation: fadeUp .35s var(--ease) both;
+}
+ul.lc-req, ul.lc-action-list { list-style: none; padding-left: 0 !important; margin: 0 !important; }
+ul.lc-req li {
+  position: relative; padding-left: 26px; margin-bottom: 9px;
+  font-size: 14px; line-height: 1.6; color: var(--ink-2); font-weight: 400;
+}
+ul.lc-req li::before {
+  content: "✓"; position: absolute; left: 0; top: -1px;
+  color: var(--green); font-weight: 700; font-size: 14px;
+}
+.lc-action {
+  background: var(--gold-pale); border: 1px solid var(--gold-border);
+  border-radius: 10px; padding: 15px 20px; margin-bottom: 18px;
+  animation: fadeUp .35s var(--ease) both;
+}
+.lc-action .lc-section-label { color: var(--amber); }
+ul.lc-action-list li {
+  position: relative; padding-left: 24px; margin-bottom: 8px;
+  font-size: 14px; line-height: 1.6; color: var(--ink-2); font-weight: 500;
+}
+ul.lc-action-list li::before {
+  content: "→"; position: absolute; left: 0; top: 0;
+  color: var(--gold); font-weight: 700;
+}
+ul.lc-action-list li:last-child, ul.lc-req li:last-child { margin-bottom: 0; }
+
+/* Citation pills */
+.lc-cite-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0 2px;
+}
+.lc-cite {
+  font-size: 11px; font-weight: 600; letter-spacing: .02em;
+  color: var(--navy); background: var(--gold-pale);
+  border: 1px solid var(--gold-border); padding: 4px 11px; border-radius: 999px;
+}
+
+/* Collapsible statutory text */
+[data-testid="stExpander"] {
+  border: 1px solid var(--slate-5) !important; border-radius: 8px !important;
+  background: var(--white) !important; margin: 8px 0 4px !important;
+  box-shadow: none !important;
+}
+[data-testid="stExpander"] summary,
+[data-testid="stExpander"] details > summary,
+[data-testid="stExpander"] [data-testid="stExpanderToggle"] {
+  font-size: 12px !important; font-weight: 600 !important;
+  color: var(--navy-2) !important; letter-spacing: .03em !important;
+}
+.lc-auth-cite {
+  font-family: 'Playfair Display', serif; font-size: 13.5px; font-weight: 700;
+  color: var(--navy); margin: 12px 0 5px;
+}
+.lc-auth-cite:first-child { margin-top: 2px; }
+blockquote.lc-auth-quote {
+  border-left: 3px solid var(--gold); background: var(--gold-pale);
+  border-radius: 0 8px 8px 0; margin: 0 0 6px; padding: 10px 14px;
+  font-size: 13px; line-height: 1.7; color: var(--ink-2);
+}
+
+/* Disclaimer */
+.lc-disclaimer {
+  font-size: 11.5px; font-style: italic; color: var(--slate-2);
+  margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--parchment-3);
+}
+
 /* ══ CHAT MESSAGES ══════════════════════════════════════════════════════════ */
 [data-testid="stChatMessage"] {
   background: transparent !important;
@@ -719,58 +796,41 @@ def _model_id() -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 SYSTEM = """You are an expert Indian Labour Law compliance assistant for HR managers.
 
-You receive:
-- Statutory text from India's four Labour Codes and their Central Rules
-- The HR manager's question or situation
+You receive statutory text from India's four Labour Codes and their Central Rules, plus the HR
+manager's question or situation.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-DETECT QUERY TYPE — choose ONE:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Respond with a SINGLE JSON object and NOTHING else — no prose, no markdown, no ``` fences.
 
-TYPE A — COMPLIANCE CHECK
-The HR manager describes something they have done or plan to do.
-Examples: "I retrenched X with 2 days notice", "We paid bonus at 8%", "We terminated without cause"
+Choose "type":
+- "compliance" — the manager describes something they did or plan to do (a verdict is needed).
+- "info" — they ask what something means or what their obligations are.
 
-Respond with:
-1. VERDICT LINE — one of:
-   ✔ COMPLIANT — [one sentence why]
-   ✖ NON-COMPLIANT — [one sentence what went wrong]
-   ⚠ PARTIALLY COMPLIANT — [one sentence what was right and what was wrong]
+JSON shape:
+{
+  "type": "compliance" | "info",
+  "verdict": {"status": "compliant" | "non-compliant" | "partial", "summary": "one sentence"},
+  "answer": "2-4 plain-English sentences",
+  "requirements": ["plain-English point", ...],
+  "actions": ["imperative step the manager must take now", ...],
+  "key_points": ["practical point with exact numbers/timelines", ...],
+  "authorities": [{"citation": "Section X / Rule X — [Code Name]", "quote": "exact statutory text"}]
+}
 
-2. PLAIN ENGLISH EXPLANATION (3–5 bullet points)
-   - What the law requires
-   - What the HR manager did right or wrong
-   - Exact numbers/timelines required by law
-   - What they must do now to remedy (if non-compliant)
+Field rules:
+- type "compliance": fill "verdict", "requirements" (3-5), and "actions" (only if NOT fully
+  compliant, else []). Set "answer" to "" and "key_points" to [].
+- type "info": fill "answer" and "key_points" (3-5). Set "verdict" to null, "requirements" to []
+  and "actions" to [].
+- "authorities": ALWAYS list the provisions you relied on; each "quote" is VERBATIM statutory text.
 
-3. WHAT THE LAW SAYS (verbatim statutory text only — never paraphrase)
-   Format: **Section X / Rule X — [Code Name]**
-   > "Exact statutory text"
-
-4. CLOSING LINE:
-   > ⚖️ This is informational only. Consult a qualified legal advisor for specific situations.
-
-TYPE B — DEFINITION / INFORMATION
-The HR manager asks what something means or what their obligations are.
-
-Respond with:
-1. PLAIN ENGLISH ANSWER (2–4 sentences, no jargon)
-2. KEY POINTS (3–5 bullets — practical, specific numbers/timelines)
-3. WHAT THE LAW SAYS (verbatim statutory text)
-   Format: **Section X / Rule X — [Code Name]**
-   > "Exact statutory text"
-4. CLOSING LINE:
-   > ⚖️ This is informational only. Consult a qualified legal advisor for specific situations.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ABSOLUTE RULES:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- NEVER invent statutory text. Only quote what is in the supplied excerpts.
-- NEVER paraphrase in the "What the Law Says" section — verbatim only.
+- NEVER invent or paraphrase statutory text. "authorities[].quote" must be verbatim from the
+  supplied excerpts only.
 - NEVER use outside legal knowledge not in the supplied text.
-- If a code has no relevant provision, state: *[Code Name] — no provision found on this topic.*
-- Keep plain English sections genuinely plain — no legal jargon.
-- Be direct and confident. HR managers need clear answers, not hedging."""
+- If no supplied excerpt is relevant, return "authorities": [] and say so plainly in the
+  "summary"/"answer".
+- Keep plain-English fields jargon-free, direct, and specific (numbers, days, thresholds).
+- Output VALID JSON. Escape quotes and newlines inside strings. No text outside the JSON object."""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -850,30 +910,42 @@ def _friendly_bedrock_error(e: Exception) -> str:
     return f"\n\n⚠️ Error contacting the model: {msg}"
 
 
-def _stream(messages: list[dict]):
+def _parse_answer(text: str) -> dict:
+    """Parse the model's JSON answer; fall back to raw text on any failure."""
+    raw = (text or "").strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```[a-zA-Z]*\n?", "", raw)
+        raw = re.sub(r"\n?```$", "", raw).strip()
+    i, j = raw.find("{"), raw.rfind("}")
+    if i != -1 and j > i:
+        try:
+            data = json.loads(raw[i : j + 1])
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            pass
+    return {"_raw": text or ""}
+
+
+def generate_answer(messages: list[dict]) -> dict:
+    """Ask the model for a structured answer (non-streaming Converse) and parse it."""
     client = get_bedrock_client()
     if not client:
-        yield "⚠️ Bedrock client error. Check secrets."
-        return
+        return {"_raw": "⚠️ Bedrock client error. Check secrets."}
     if not _has_key():
-        yield "⚠️ Add **AWS_BEARER_TOKEN_BEDROCK** and **AWS_REGION** in *App → Settings → Secrets*."
-        return
-
+        return {"_raw": "⚠️ Add **AWS_BEARER_TOKEN_BEDROCK** and **AWS_REGION** in "
+                        "*App → Settings → Secrets*."}
     convo = [{"role": m["role"], "content": [{"text": m["content"]}]} for m in messages]
     try:
-        resp = client.converse_stream(
+        resp = client.converse(
             modelId=_model_id(),
             system=[{"text": SYSTEM}],
             messages=convo,
             inferenceConfig={"maxTokens": 4096, "temperature": 0.1},
         )
-        for event in resp["stream"]:
-            if "contentBlockDelta" in event:
-                t = event["contentBlockDelta"]["delta"].get("text", "")
-                if t:
-                    yield t
+        return _parse_answer(resp["output"]["message"]["content"][0]["text"])
     except Exception as e:
-        yield _friendly_bedrock_error(e)
+        return {"_raw": _friendly_bedrock_error(e)}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -906,24 +978,93 @@ def _src_row_html(sources, no_provision):
         f'</div>'
     )
 
-def _verdict_html(text: str) -> str | None:
-    m = re.search(
-        r'([✔✖⚠])\s*(COMPLIANT|NON-COMPLIANT|PARTIALLY COMPLIANT)\s*[—–-]\s*(.+)',
-        text
-    )
-    if not m:
-        return None
-    icon, label, detail = m.group(1), m.group(2), m.group(3).strip()
-    cls = {"✔": "compliant", "✖": "non-compliant", "⚠": "partial"}.get(icon, "partial")
-    return (
-        f'<div class="lc-verdict {cls}">'
-        f'  <span class="lc-verdict-icon">{icon}</span>'
-        f'  <div class="lc-verdict-meta">'
-        f'    <div class="lc-verdict-title">{label}</div>'
-        f'    <div class="lc-verdict-text">{detail}</div>'
-        f'  </div>'
-        f'</div>'
-    )
+DISCLAIMER = ("⚖️ Informational only — not legal advice. "
+              "Consult a qualified advisor for specific situations.")
+_VERDICT = {
+    "compliant":     ("✔", "Compliant"),
+    "non-compliant": ("✖", "Non-Compliant"),
+    "partial":       ("⚠", "Partially Compliant"),
+}
+
+def _esc(x) -> str:
+    return html.escape(str(x if x is not None else ""))
+
+def _esc_ml(x) -> str:
+    return _esc(x).replace("\n", "<br>")
+
+def _bullets(items) -> str:
+    return "".join(f"<li>{_esc(x)}</li>" for x in items if str(x).strip())
+
+def render_answer(data: dict):
+    """Render a structured answer as scannable cards (verdict / points / actions /
+    collapsible authorities). Falls back to markdown for unstructured replies."""
+    if not isinstance(data, dict) or "_raw" in data:
+        st.markdown(data.get("_raw", "") if isinstance(data, dict) else str(data))
+        st.markdown(f'<div class="lc-disclaimer">{DISCLAIMER}</div>', unsafe_allow_html=True)
+        return
+
+    is_comp = data.get("type") == "compliance"
+    verdict = data.get("verdict") or {}
+
+    # 1 — Verdict card (compliance) or lead paragraph (info)
+    status = (verdict.get("status") or "").strip()
+    if is_comp and status in _VERDICT:
+        icon, label = _VERDICT[status]
+        st.markdown(
+            f'<div class="lc-verdict {status}">'
+            f'<span class="lc-verdict-icon">{icon}</span>'
+            f'<div class="lc-verdict-meta">'
+            f'<div class="lc-verdict-title">{label}</div>'
+            f'<div class="lc-verdict-text">{_esc(verdict.get("summary", ""))}</div>'
+            f'</div></div>',
+            unsafe_allow_html=True,
+        )
+    elif str(data.get("answer", "")).strip():
+        st.markdown(f'<div class="lc-lead">{_esc(data["answer"])}</div>',
+                    unsafe_allow_html=True)
+
+    # 2 — Requirements / key points checklist
+    points = (data.get("requirements") if is_comp else data.get("key_points")) or []
+    points = [p for p in points if str(p).strip()]
+    if points:
+        label = "What the law requires" if is_comp else "Key points"
+        st.markdown(
+            f'<div class="lc-block"><div class="lc-section-label">{label}</div>'
+            f'<ul class="lc-req">{_bullets(points)}</ul></div>',
+            unsafe_allow_html=True,
+        )
+
+    # 3 — Action box (compliance, only when there are actions)
+    actions = [a for a in (data.get("actions") or []) if str(a).strip()]
+    if actions:
+        st.markdown(
+            f'<div class="lc-action"><div class="lc-section-label">What to do now</div>'
+            f'<ul class="lc-action-list">{_bullets(actions)}</ul></div>',
+            unsafe_allow_html=True,
+        )
+
+    # 4 — Authorities: citation pills + collapsible verbatim text
+    auths = [a for a in (data.get("authorities") or [])
+             if isinstance(a, dict) and str(a.get("quote", "")).strip()]
+    if auths:
+        pills = "".join(
+            f'<span class="lc-cite">{_esc(a.get("citation") or "Provision")}</span>'
+            for a in auths
+        )
+        st.markdown(
+            f'<div class="lc-cite-row"><span class="lc-src-label">Authority</span>{pills}</div>',
+            unsafe_allow_html=True,
+        )
+        with st.expander("📜  Show statutory text"):
+            for a in auths:
+                st.markdown(
+                    f'<div class="lc-auth-cite">{_esc(a.get("citation") or "Provision")}</div>'
+                    f'<blockquote class="lc-auth-quote">{_esc_ml(a.get("quote", ""))}</blockquote>',
+                    unsafe_allow_html=True,
+                )
+
+    # 5 — Disclaimer
+    st.markdown(f'<div class="lc-disclaimer">{DISCLAIMER}</div>', unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1000,6 +1141,72 @@ if not _has_key():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Demo preview (visual check, no Bedrock needed):  add ?demo=1 to the URL
+# ─────────────────────────────────────────────────────────────────────────────
+def _demo_param():
+    try:
+        return st.query_params.get("demo")
+    except Exception:
+        return None
+
+if _demo_param():
+    _demo_samples = [
+        {
+            "type": "compliance",
+            "verdict": {"status": "non-compliant",
+                        "summary": "One month's written notice (or wages in lieu) is required "
+                                   "before retrenchment; two days is not enough."},
+            "requirements": [
+                "At least one month's written notice, or wages in lieu of the notice period.",
+                "The notice must state the reasons for retrenchment.",
+                "Retrenchment compensation of 15 days' average pay for every completed year.",
+                "Notice to the appropriate Government in the prescribed manner.",
+            ],
+            "actions": [
+                "Pay wages in lieu for the ~28-day shortfall in notice.",
+                "Pay the retrenchment compensation due for completed years of service.",
+                "File the prescribed notice with the appropriate Government.",
+            ],
+            "authorities": [
+                {"citation": "Section 70 — Industrial Relations Code, 2020",
+                 "quote": "No workman employed in any industrial establishment who has been in "
+                          "continuous service for not less than one year under an employer shall "
+                          "be retrenched until the workman has been given one month's notice in "
+                          "writing indicating the reasons for retrenchment and the period of "
+                          "notice has expired, or the workman has been paid in lieu of such "
+                          "notice, wages for the period of the notice."},
+            ],
+        },
+        {
+            "type": "info",
+            "answer": "Gratuity is a lump-sum reward for long service, payable when an employee "
+                      "leaves after at least five years of continuous service. It is calculated "
+                      "at fifteen days' wages for every completed year of service.",
+            "key_points": [
+                "Payable on resignation, retirement, superannuation, death or disablement.",
+                "Five years' continuous service is required (waived for death or disablement).",
+                "Calculated at 15 days' wages for each completed year of service.",
+                "Fixed-term employees are paid pro rata, even under five years.",
+            ],
+            "authorities": [
+                {"citation": "Section 53 — Code on Social Security, 2020",
+                 "quote": "Gratuity shall be payable to an employee on the termination of his "
+                          "employment after he has rendered continuous service for not less than "
+                          "five years."},
+            ],
+        },
+    ]
+    st.markdown('<div class="lc-correction">🔍 Demo preview — sample answers (not live).</div>',
+                unsafe_allow_html=True)
+    for _d in _demo_samples:
+        with st.chat_message("assistant", avatar="⚖️"):
+            _srcs = [a["citation"].split("—")[-1].strip() for a in _d["authorities"]]
+            st.markdown(_src_row_html(_srcs, []), unsafe_allow_html=True)
+            render_answer(_d)
+    st.stop()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Chat history
 # ─────────────────────────────────────────────────────────────────────────────
 for msg in st.session_state.messages:
@@ -1010,14 +1217,12 @@ for msg in st.session_state.messages:
         with st.chat_message("assistant", avatar="⚖️"):
             if msg.get("corrections"):
                 st.markdown(_correction_html(msg["corrections"]), unsafe_allow_html=True)
-            if msg.get("verdict_html"):
-                st.markdown(msg["verdict_html"], unsafe_allow_html=True)
             if msg.get("sources") or msg.get("no_provision"):
                 st.markdown(
                     _src_row_html(msg.get("sources", []), msg.get("no_provision", [])),
                     unsafe_allow_html=True,
                 )
-            st.markdown(msg["content"])
+            render_answer(msg.get("data") or {"_raw": msg.get("content", "")})
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1108,36 +1313,28 @@ if st.session_state.pending:
             if corrections:
                 st.markdown(_correction_html(corrections), unsafe_allow_html=True)
 
-            verdict_placeholder = st.empty()
-
             if sources or no_provision:
                 st.markdown(
                     _src_row_html(sources, no_provision), unsafe_allow_html=True
                 )
 
             if not sources:
-                names    = " · ".join(e["meta"]["short"] for e in LOADED.values())
-                response = (
+                names = " · ".join(e["meta"]["short"] for e in LOADED.values())
+                data  = {"_raw": (
                     f"No relevant provisions found across **{names}** for this query. "
                     "Try rephrasing or ask about a specific Section or topic."
-                )
-                st.markdown(response)
-                verdict_html = None
+                )}
             else:
-                response = st.write_stream(
-                    _stream([{"role": "user", "content": user_msg}])
-                )
-                verdict_html = _verdict_html(response or "")
-                if verdict_html:
-                    verdict_placeholder.markdown(verdict_html, unsafe_allow_html=True)
+                with st.spinner("Analysing the statute…"):
+                    data = generate_answer([{"role": "user", "content": user_msg}])
+            render_answer(data)
 
         st.session_state.messages.append({
             "role":         "assistant",
-            "content":      response,
+            "data":         data,
             "sources":      sources,
             "no_provision": no_provision,
             "corrections":  corrections,
-            "verdict_html": verdict_html if sources else None,
         })
         st.rerun()
 

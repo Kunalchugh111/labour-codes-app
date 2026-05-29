@@ -70,6 +70,11 @@ different one (e.g. a Claude or Llama model once you have access), set the
 `BEDROCK_MODEL_ID` secret to that model's ID and make sure `AWS_REGION` is a region where
 it's available — no code change needed.
 
+## Preview the answer layout
+Append `?demo=1` to the app URL to see sample answers rendered in the current card layout
+(verdict card, requirements checklist, action box, citation pills, collapsible statutory text)
+— no Bedrock key needed. Handy for checking the look after a change.
+
 ## Note
 Informational reference for HR. The cited provision in the Code or Rules is the
 authoritative text; for a contested interpretation, consult a qualified professional.
