@@ -296,6 +296,27 @@ def search_old(entry: dict, query: str, k: int = 6, min_score: float = _MIN_SCOR
     return [c for s, c in scored[:k] if s >= min_score]
 
 
+# ── Verbatim-quote verification ──────────────────────────────────────────────
+# Guardrail: confirm a cited "quote" is actually present in the statutory text we
+# supplied to the model — so a fabricated/paraphrased quote can never pass as law.
+
+def normalize_for_match(s: str) -> str:
+    """Lowercase, drop punctuation, collapse whitespace — for tolerant substring matching."""
+    return re.sub(r"[^a-z0-9 ]", " ", re.sub(r"\s+", " ", (s or "").lower())).strip()
+
+
+def quote_supported(quote: str, grounding_norm: str) -> bool:
+    """True if `quote` appears in the (already-normalised) grounding text. Tolerates
+    '...' elisions: every substantial fragment between elisions must be found."""
+    frags = [normalize_for_match(f)
+             for f in re.split(r"\.\.\.+|…|\[\s*\.\.\.\s*\]", quote or "")]
+    frags = [f for f in frags if len(f) >= 25]          # ignore trivially short fragments
+    if not frags:
+        f = normalize_for_match(quote)
+        return len(f) >= 12 and f in grounding_norm
+    return all(f in grounding_norm for f in frags)
+
+
 _MAX_CHUNK_CHARS = 3000
 
 
