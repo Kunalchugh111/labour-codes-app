@@ -277,29 +277,37 @@ section[data-testid="stBottom"] > div {
   transition: all .2s var(--ease);
 }
 
-/* ══ SEARCH AREA — the hero moment ══════════════════════════════════════════ */
-.lc-search-section {
-  background: var(--parchment-2);
-  border-top: 1px solid var(--parchment-3);
-  padding: 1.75rem 3rem 1.5rem;
-  position: relative;
+/* ══ SEARCH AREA ═════════════════════════════════════════════════════════════
+   Streamlit's st.chat_input() is ALWAYS rendered in a sticky bottom container —
+   it cannot be placed inside a custom HTML div. So we style the bottom container
+   to look like a designed search dock, not an afterthought.
+   ═════════════════════════════════════════════════════════════════════════════ */
+
+/* The sticky bottom dock — make it look intentional */
+[data-testid="stBottom"],
+[data-testid="stBottomBlockContainer"],
+.stBottomBlockContainer {
+  background: var(--parchment) !important;
+  background-color: var(--parchment) !important;
+  border-top: 1px solid var(--parchment-3) !important;
+  padding-top: .75rem !important;
+  padding-bottom: .75rem !important;
+  box-shadow: 0 -8px 32px rgba(12,27,58,.06) !important;
+}
+[data-testid="stBottom"] > *,
+[data-testid="stBottom"] > * > *,
+[data-testid="stBottomBlockContainer"] > *,
+.stBottomBlockContainer > * {
+  background: var(--parchment) !important;
+  background-color: var(--parchment) !important;
 }
 
-.lc-search-label {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: .2em;
-  text-transform: uppercase;
-  color: var(--slate-3);
-  margin-bottom: .85rem;
-}
-
-/* The search bar itself lives inside Streamlit stChatInput — we style it here */
+/* The search input styling */
 [data-testid="stChatInput"] {
   background: var(--white) !important;
   border: 1.5px solid var(--slate-4) !important;
-  border-radius: 12px !important;
-  box-shadow: var(--s2), 0 0 0 0 rgba(12,27,58,0) !important;
+  border-radius: 14px !important;
+  box-shadow: var(--s2) !important;
   transition: border-color .22s var(--ease), box-shadow .22s var(--ease) !important;
 }
 [data-testid="stChatInput"]:focus-within {
@@ -308,7 +316,7 @@ section[data-testid="stBottom"] > div {
 }
 [data-testid="stChatInput"] textarea {
   color: var(--ink) !important;
-  font-size: 14.5px !important;
+  font-size: 15px !important;
   font-family: 'DM Sans', sans-serif !important;
   font-weight: 400 !important;
   line-height: 1.6 !important;
@@ -320,25 +328,14 @@ section[data-testid="stBottom"] > div {
   font-weight: 300 !important;
 }
 
-/* Override the send button */
+/* Send button */
 [data-testid="stChatInputSubmitButton"] button {
   background: var(--navy) !important;
-  border-radius: 8px !important;
+  border-radius: 10px !important;
   transition: background .18s var(--ease) !important;
 }
 [data-testid="stChatInputSubmitButton"] button:hover {
   background: var(--navy-3) !important;
-}
-
-/* Bottom container — parchment all the way */
-[data-testid="stBottom"],
-[data-testid="stBottom"] > *,
-[data-testid="stBottom"] > * > *,
-[data-testid="stBottomBlockContainer"],
-.stBottomBlockContainer,
-.stBottomBlockContainer > * {
-  background: var(--parchment) !important;
-  background-color: var(--parchment) !important;
 }
 
 /* ══ SAMPLE QUESTIONS ═══════════════════════════════════════════════════════ */
@@ -492,22 +489,27 @@ section[data-testid="stBottom"] > div {
   animation: fadeUp .4s var(--ease) both;
 }
 
-/* Hide default avatars */
+/* Hide ALL avatar elements — covers every Streamlit version's data-testid variants */
 [data-testid="stChatMessageAvatarUser"],
-[data-testid="stChatMessageAvatarAssistant"] { display: none !important; }
+[data-testid="stChatMessageAvatarAssistant"],
+[class*="avatarImage"],
+[class*="avatar"] img,
+.stChatMessage [data-testid*="Avatar"] { display: none !important; }
 
-/* User bubble */
+/* User bubble — target by role attribute which is more stable than avatar presence */
+[data-testid="stChatMessage"][data-role="user"],
 [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {
   background: var(--navy) !important;
   border-radius: 20px 20px 5px 20px !important;
   padding: 14px 22px !important;
-  margin-left: 90px !important;
+  margin-left: 80px !important;
+  margin-right: 0 !important;
   box-shadow: var(--s3) !important;
 }
-[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"])
-[data-testid="stChatMessageContent"],
-[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"])
-[data-testid="stChatMessageContent"] p {
+[data-testid="stChatMessage"][data-role="user"] [data-testid="stChatMessageContent"],
+[data-testid="stChatMessage"][data-role="user"] [data-testid="stChatMessageContent"] p,
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) [data-testid="stChatMessageContent"],
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) [data-testid="stChatMessageContent"] p {
   color: rgba(255,255,255,.85) !important;
   font-size: 14px !important;
   font-weight: 300 !important;
@@ -515,6 +517,7 @@ section[data-testid="stBottom"] > div {
 }
 
 /* Assistant card */
+[data-testid="stChatMessage"][data-role="assistant"],
 [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) {
   background: var(--white) !important;
   border: 1px solid var(--slate-5) !important;
@@ -522,9 +525,11 @@ section[data-testid="stBottom"] > div {
   border-radius: 4px 20px 20px 20px !important;
   padding: 22px 26px 20px !important;
   margin-right: 40px !important;
+  margin-left: 0 !important;
   box-shadow: var(--s2) !important;
   transition: box-shadow .25s var(--ease) !important;
 }
+[data-testid="stChatMessage"][data-role="assistant"]:hover,
 [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]):hover {
   box-shadow: var(--s3) !important;
 }
@@ -945,17 +950,14 @@ st.markdown(f"""
     </p>
     <div class="lc-badges">{badges_html}</div>
   </div>
-  <div class="lc-search-section">
-    <div class="lc-search-label">Ask a compliance question</div>
+</div>
 """, unsafe_allow_html=True)
 
-# ── Chat input lives here, inside the search section ──────────────────────
+# ── Chat input — Streamlit always renders this in a sticky bottom dock ─────
 if prompt := st.chat_input(
     "e.g. I retrenched an employee with 2 days notice — was that correct?"
 ):
     _submit(prompt)
-
-st.markdown("</div></div>", unsafe_allow_html=True)  # close search-section + hero
 
 
 # ─────────────────────────────────────────────────────────────────────────────
