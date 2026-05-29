@@ -596,6 +596,27 @@ blockquote.lc-auth-quote {
 }
 .lc-cmp-impact span { color: var(--amber); font-weight: 700; }
 
+/* ══ VERBATIM-QUOTE GUARDRAIL ════════════════════════════════════════════════ */
+.lc-trust {
+  font-size: 11.5px; font-weight: 600; letter-spacing: .01em;
+  border-radius: 8px; padding: 7px 12px; margin: 8px 0 4px;
+}
+.lc-trust.ok   { color: var(--green); background: var(--green-bg); border: 1px solid var(--green-b); }
+.lc-trust.warn { color: var(--red);   background: var(--red-bg);   border: 1px solid var(--red-b); }
+.lc-verified {
+  font-size: 9.5px; font-weight: 700; letter-spacing: .04em; color: var(--green);
+  background: var(--green-bg); border: 1px solid var(--green-b);
+  padding: 1px 7px; border-radius: 999px; margin-left: 6px; white-space: nowrap;
+}
+.lc-unverified {
+  font-size: 9.5px; font-weight: 700; letter-spacing: .04em; color: var(--red);
+  background: var(--red-bg); border: 1px solid var(--red-b);
+  padding: 1px 7px; border-radius: 999px; margin-left: 6px; white-space: nowrap;
+}
+blockquote.lc-auth-quote.unverified {
+  border-left-color: var(--red) !important; background: var(--red-bg) !important;
+}
+
 /* ══ CHAT MESSAGES ══════════════════════════════════════════════════════════ */
 [data-testid="stChatMessage"] {
   background: transparent !important;
@@ -1037,6 +1058,19 @@ def _is_comparison(query: str) -> bool:
     return bool(_COMPARE_RE.search(query))
 
 
+def _verify_quotes(data: dict, grounding: str) -> dict:
+    """Guardrail: flag each cited quote as verbatim-verified against the supplied statute."""
+    if not isinstance(data, dict):
+        return data
+    hay = corpus.normalize_for_match(grounding)
+    auths = data.get("authorities")
+    if isinstance(auths, list):
+        for a in auths:
+            if isinstance(a, dict) and str(a.get("quote", "")).strip():
+                a["verified"] = corpus.quote_supported(a["quote"], hay)
+    return data
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1098,6 +1132,40 @@ def _esc_ml(x) -> str:
 def _bullets(items) -> str:
     return "".join(f"<li>{_esc(x)}</li>" for x in items if str(x).strip())
 
+def _render_authorities(auths, label: str):
+    """Citation pills + a verbatim-trust line + a collapsible panel of the cited
+    provisions, each badged verified (✓) or unverified (⚠) by the guardrail."""
+    auths = [a for a in (auths or []) if isinstance(a, dict) and str(a.get("quote", "")).strip()]
+    if not auths:
+        return
+    ntot = len(auths)
+    nver = sum(1 for a in auths if a.get("verified"))
+    if any("verified" in a for a in auths):
+        if nver == ntot:
+            st.markdown(
+                f'<div class="lc-trust ok">✓ All {ntot} quoted provision(s) verified '
+                f'verbatim against the source text</div>', unsafe_allow_html=True)
+        else:
+            st.markdown(
+                f'<div class="lc-trust warn">⚠ {ntot - nver} of {ntot} quote(s) could not be '
+                f'matched to the source — treat those as unverified</div>', unsafe_allow_html=True)
+    pills = "".join(
+        f'<span class="lc-cite">{_esc(a.get("citation") or "Provision")}</span>' for a in auths)
+    st.markdown(
+        f'<div class="lc-cite-row"><span class="lc-src-label">Authority</span>{pills}</div>',
+        unsafe_allow_html=True)
+    with st.expander(label):
+        for a in auths:
+            v = a.get("verified")
+            badge = ('<span class="lc-verified">✓ verbatim</span>' if v
+                     else '<span class="lc-unverified">⚠ unverified</span>' if v is False else '')
+            cls = " unverified" if v is False else ""
+            st.markdown(
+                f'<div class="lc-auth-cite">{_esc(a.get("citation") or "Provision")} {badge}</div>'
+                f'<blockquote class="lc-auth-quote{cls}">{_esc_ml(a.get("quote", ""))}</blockquote>',
+                unsafe_allow_html=True)
+
+
 def render_comparison(data: dict):
     """Render an old-Act ↔ new-Code comparison: headline, per-change old|new columns,
     an impact line, and the verbatim provisions."""
@@ -1127,15 +1195,7 @@ def render_comparison(data: dict):
             st.markdown(
                 f'<div class="lc-cmp-impact"><span>What to do&nbsp;→</span> {_esc(impact)}</div>',
                 unsafe_allow_html=True)
-    auths = [a for a in (data.get("authorities") or [])
-             if isinstance(a, dict) and str(a.get("quote", "")).strip()]
-    if auths:
-        with st.expander("📜  Show statutory text (old & new)"):
-            for a in auths:
-                st.markdown(
-                    f'<div class="lc-auth-cite">{_esc(a.get("citation") or "Provision")}</div>'
-                    f'<blockquote class="lc-auth-quote">{_esc_ml(a.get("quote", ""))}</blockquote>',
-                    unsafe_allow_html=True)
+    _render_authorities(data.get("authorities"), "📜  Show statutory text (old & new)")
     st.markdown(f'<div class="lc-disclaimer">{DISCLAIMER}</div>', unsafe_allow_html=True)
 
 
@@ -1190,25 +1250,8 @@ def render_answer(data: dict):
             unsafe_allow_html=True,
         )
 
-    # 4 — Authorities: citation pills + collapsible verbatim text
-    auths = [a for a in (data.get("authorities") or [])
-             if isinstance(a, dict) and str(a.get("quote", "")).strip()]
-    if auths:
-        pills = "".join(
-            f'<span class="lc-cite">{_esc(a.get("citation") or "Provision")}</span>'
-            for a in auths
-        )
-        st.markdown(
-            f'<div class="lc-cite-row"><span class="lc-src-label">Authority</span>{pills}</div>',
-            unsafe_allow_html=True,
-        )
-        with st.expander("📜  Show statutory text"):
-            for a in auths:
-                st.markdown(
-                    f'<div class="lc-auth-cite">{_esc(a.get("citation") or "Provision")}</div>'
-                    f'<blockquote class="lc-auth-quote">{_esc_ml(a.get("quote", ""))}</blockquote>',
-                    unsafe_allow_html=True,
-                )
+    # 4 — Authorities: citation pills + verbatim-verified collapsible text
+    _render_authorities(data.get("authorities"), "📜  Show statutory text")
 
     # 5 — Disclaimer
     st.markdown(f'<div class="lc-disclaimer">{DISCLAIMER}</div>', unsafe_allow_html=True)
@@ -1316,9 +1359,9 @@ if _demo_param():
                  "impact": "No change here — keep paying notice + 15 days/year."},
             ],
             "authorities": [
-                {"citation": "Section 25N — Industrial Disputes Act, 1947",
+                {"citation": "Section 25N — Industrial Disputes Act, 1947", "verified": True,
                  "quote": "No workman employed in any industrial establishment to which this Chapter applies, who has been in continuous service for not less than one year … shall be retrenched … until the prior permission of the appropriate Government … has been obtained …"},
-                {"citation": "Section 65 — Industrial Relations Code, 2020",
+                {"citation": "Section 65 — Industrial Relations Code, 2020", "verified": True,
                  "quote": "No worker employed in any industrial establishment to which this Chapter applies … shall be retrenched until the prior permission of the appropriate Government is obtained, where such establishment employed not less than three hundred workers …"},
             ],
         },
@@ -1496,11 +1539,14 @@ if st.session_state.pending:
                     "Try rephrasing or ask about a specific Section or topic."
                 )}
             elif _is_comparison(corrected_q):
+                cmp_prompt = build_comparison_prompt(corrected_q, all_results)
                 with st.spinner("Comparing the old Act with the new Code…"):
-                    data = generate_comparison(build_comparison_prompt(corrected_q, all_results))
+                    data = generate_comparison(cmp_prompt)
+                data = _verify_quotes(data, cmp_prompt)
             else:
                 with st.spinner("Analysing the statute…"):
                     data = generate_answer([{"role": "user", "content": user_msg}])
+                data = _verify_quotes(data, user_msg)
             render_answer(data)
 
         st.session_state.messages.append({
