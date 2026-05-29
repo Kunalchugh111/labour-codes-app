@@ -13,7 +13,9 @@ import streamlit as st
 
 import corpus
 
-MODEL_ID = "openai.gpt-oss-120b"
+# Global cross-Region inference profile — the only option offered from ap-south-1 (Mumbai).
+# Override with the BEDROCK_MODEL_ID secret if you change region or model.
+MODEL_ID = "global.anthropic.claude-sonnet-4-6"
 
 st.set_page_config(
     page_title="Labour Codes Assistant",
@@ -704,6 +706,13 @@ def _has_key() -> bool:
     except Exception:
         return False
 
+def _model_id() -> str:
+    """Effective model ID — overridable via the BEDROCK_MODEL_ID secret."""
+    try:
+        return (st.secrets.get("BEDROCK_MODEL_ID", "") or "").strip() or MODEL_ID
+    except Exception:
+        return MODEL_ID
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # System prompt
@@ -796,7 +805,7 @@ def detect_clarification(query: str) -> dict | None:
     })
     try:
         resp = client.invoke_model(
-            modelId=MODEL_ID, body=body,
+            modelId=_model_id(), body=body,
             contentType="application/json", accept="application/json"
         )
         raw = json.loads(resp["body"].read())
@@ -814,6 +823,38 @@ def detect_clarification(query: str) -> dict | None:
 # ─────────────────────────────────────────────────────────────────────────────
 # Streaming
 # ─────────────────────────────────────────────────────────────────────────────
+def _friendly_bedrock_error(e: Exception) -> str:
+    """Turn raw AWS errors into clear, actionable guidance for the operator."""
+    msg = str(e)
+    low = msg.lower()
+    if ("payment" in low or "marketplace subscription" in low
+            or "invalid_payment_instrument" in low):
+        return (
+            "\n\n⚠️ **The model isn't active yet — finish the one-time AWS Bedrock setup.**\n\n"
+            "AWS no longer has a *Model access* button: Claude is turned on by submitting a "
+            "one-time use-case form, and the Marketplace subscription is created on your first "
+            "call. To complete it:\n"
+            "1. **Billing → Payment preferences** — confirm a valid card is set as default "
+            "(some cards need a small verification charge to clear).\n"
+            "2. **Bedrock Console → Playground** (region `ap-south-1`) — pick "
+            "**Claude Sonnet 4.6**, submit the use-case form, and send a test message. That "
+            "first call creates the subscription now that a card is on file.\n"
+            "3. The identity behind `AWS_BEARER_TOKEN_BEDROCK` needs the "
+            "**`aws-marketplace:Subscribe`** permission — or have an admin run step 2 once.\n"
+            "4. Wait ~2 minutes and try again. If it still fails, open a **free Billing "
+            "support case** with AWS."
+        )
+    if ("accessdenied" in low or "not authorized" in low
+            or "could not be validated" in low):
+        return (
+            "\n\n⚠️ **AWS denied access to the model.** In the **Bedrock Console → Playground** "
+            "(region `ap-south-1`), submit the one-time use-case form for **Claude Sonnet 4.6**, "
+            "and confirm `AWS_BEARER_TOKEN_BEDROCK` is valid for that account with "
+            "`bedrock:InvokeModel` and `aws-marketplace:Subscribe` permissions."
+        )
+    return f"\n\n⚠️ Error contacting the model: {msg}"
+
+
 def _stream(messages: list[dict]):
     client = get_bedrock_client()
     if not client:
@@ -832,7 +873,7 @@ def _stream(messages: list[dict]):
     })
     try:
         resp = client.invoke_model_with_response_stream(
-            modelId=MODEL_ID, body=body,
+            modelId=_model_id(), body=body,
             contentType="application/json", accept="application/json",
         )
         for event in resp.get("body", []):
@@ -847,7 +888,7 @@ def _stream(messages: list[dict]):
                     if t:
                         yield t
     except Exception as e:
-        yield f"\n\n⚠️ Error: {e}"
+        yield _friendly_bedrock_error(e)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
