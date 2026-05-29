@@ -822,6 +822,8 @@ Field rules:
 - type "info": fill "answer" and "key_points" (3-5). Set "verdict" to null, "requirements" to []
   and "actions" to [].
 - "authorities": ALWAYS list the provisions you relied on; each "quote" is VERBATIM statutory text.
+  When a Central Rule prescribes the procedure, forms, timelines, registers or rates for a Section
+  you rely on, include that Rule in "authorities" as well as the Section — cite both.
 
 ABSOLUTE RULES:
 - NEVER invent or paraphrase statutory text. "authorities[].quote" must be verbatim from the
