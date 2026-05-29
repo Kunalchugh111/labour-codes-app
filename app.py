@@ -814,6 +814,34 @@ def detect_clarification(query: str) -> dict | None:
 # ─────────────────────────────────────────────────────────────────────────────
 # Streaming
 # ─────────────────────────────────────────────────────────────────────────────
+def _friendly_bedrock_error(e: Exception) -> str:
+    """Turn raw AWS errors into clear, actionable guidance for the operator."""
+    msg = str(e)
+    low = msg.lower()
+    if ("payment" in low or "marketplace subscription" in low
+            or "invalid_payment_instrument" in low):
+        return (
+            "\n\n⚠️ **The model isn't active yet — AWS billing needs to be set up.**\n\n"
+            "This is an AWS account issue, not this app. To fix it:\n"
+            "1. **AWS Console → Billing → Payment preferences** — add a valid card "
+            "(not expired; some cards need a small verification charge to clear).\n"
+            "2. **Bedrock Console → Model access** (in your `AWS_REGION`) — enable "
+            "**Claude Sonnet 4.6** and wait until it reads *Access granted*.\n"
+            "3. The card must be on the **same AWS account** that issued your "
+            "`AWS_BEARER_TOKEN_BEDROCK`.\n"
+            "4. Wait ~2 minutes and try again. If it still fails, open a **free "
+            "Billing support case** with AWS."
+        )
+    if ("accessdenied" in low or "not authorized" in low
+            or "could not be validated" in low):
+        return (
+            "\n\n⚠️ **AWS denied access to the model.** Check that **Claude Sonnet 4.6** "
+            "is enabled in **Bedrock → Model access** for your `AWS_REGION`, and that "
+            "`AWS_BEARER_TOKEN_BEDROCK` is valid for that account and region."
+        )
+    return f"\n\n⚠️ Error contacting the model: {msg}"
+
+
 def _stream(messages: list[dict]):
     client = get_bedrock_client()
     if not client:
@@ -847,7 +875,7 @@ def _stream(messages: list[dict]):
                     if t:
                         yield t
     except Exception as e:
-        yield f"\n\n⚠️ Error: {e}"
+        yield _friendly_bedrock_error(e)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
