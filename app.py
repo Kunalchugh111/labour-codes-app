@@ -13,7 +13,7 @@ import streamlit as st
 
 import corpus
 
-MODEL_ID = "global.anthropic.claude-sonnet-4-6"
+MODEL_ID = "openai.gpt-oss-120b"
 
 st.set_page_config(
     page_title="Labour Codes Assistant",
