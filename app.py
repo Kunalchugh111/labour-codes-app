@@ -1,23 +1,19 @@
 """
 app.py — Labour Codes Assistant (Streamlit)
-Backend : AWS Bedrock — claude-sonnet-4-6
-Design  : White · Navy Blue · Slate — editorial-legal aesthetic
-
-Secrets required in Streamlit (App → Settings → Secrets):
-  AWS_ACCESS_KEY_ID
-  AWS_SECRET_ACCESS_KEY
-  AWS_REGION          (e.g. us-east-1)
+Backend : AWS Bedrock — global.anthropic.claude-sonnet-4-6 (Mumbai cross-region)
+Auth    : AWS Bedrock API Key  →  set AWS_BEARER_TOKEN_BEDROCK in Streamlit secrets
+Design  : Navy · White · Slate — editorial legal aesthetic
 """
 
 import json
-import re
+import os
 import boto3
 import streamlit as st
 
 import corpus
 
-# ── Model config ──────────────────────────────────────────────────────────────
-MODEL_ID = "us.anthropic.claude-sonnet-4-6-20250514-v1:0"
+# ── Model ─────────────────────────────────────────────────────────────────────
+MODEL_ID = "global.anthropic.claude-sonnet-4-6"
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -29,496 +25,301 @@ st.set_page_config(
 # ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Sora:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500;600&display=swap');
 
 :root {
-  /* Palette */
-  --navy:          #0f2557;
-  --navy-mid:      #1e3a8a;
-  --navy-light:    #dbeafe;
-  --navy-xlight:   #eff6ff;
-  --navy-border:   #bfdbfe;
-  --slate:         #475569;
-  --slate-light:   #f1f5f9;
-  --slate-border:  #e2e8f0;
-  --slate-muted:   #94a3b8;
-  --white:         #ffffff;
-  --ink:           #0a1628;
-  --ink-2:         #1e293b;
-  --ink-3:         #334155;
-
-  /* Shadows */
-  --shadow-xs:  0 1px 2px rgba(15,37,87,0.06);
-  --shadow-sm:  0 2px 8px rgba(15,37,87,0.08);
-  --shadow-md:  0 8px 32px rgba(15,37,87,0.12);
-  --shadow-lg:  0 20px 60px rgba(15,37,87,0.16);
-
-  /* Motion */
-  --ease: cubic-bezier(0.16,1,0.3,1);
+  --navy:         #0f2557;
+  --navy-mid:     #1e3a8a;
+  --navy-soft:    #3b5bdb;
+  --navy-light:   #dbeafe;
+  --navy-xlight:  #eff6ff;
+  --navy-border:  #bfdbfe;
+  --slate:        #475569;
+  --slate-light:  #f1f5f9;
+  --slate-border: #e2e8f0;
+  --slate-muted:  #94a3b8;
+  --white:        #ffffff;
+  --ink:          #0a1628;
+  --ink-2:        #1e293b;
+  --ink-3:        #334155;
+  --ease:         cubic-bezier(0.16,1,0.3,1);
+  --sh-xs:        0 1px 3px rgba(15,37,87,0.07);
+  --sh-sm:        0 2px 10px rgba(15,37,87,0.09);
+  --sh-md:        0 8px 32px rgba(15,37,87,0.13);
 }
 
-/* ── Reset & base ── */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+*,*::before,*::after{box-sizing:border-box;}
 
-.stApp {
-  background: var(--white);
-  font-family: 'Sora', system-ui, sans-serif;
-  color: var(--ink);
-  -webkit-font-smoothing: antialiased;
+.stApp{
+  background:#f8fafc;
+  font-family:'DM Sans',system-ui,sans-serif;
+  color:var(--ink);
+  -webkit-font-smoothing:antialiased;
 }
 
-[data-testid="stHeader"],
-[data-testid="stToolbar"],
-#MainMenu, footer { display: none !important; }
+[data-testid="stHeader"],[data-testid="stToolbar"],#MainMenu,footer{display:none!important;}
 
-.block-container {
-  max-width: 800px !important;
-  padding-top: 0 !important;
-  padding-bottom: 9rem !important;
-  padding-left: 1.5rem !important;
-  padding-right: 1.5rem !important;
+.block-container{
+  max-width:780px!important;
+  padding:0 1.5rem 9rem!important;
 }
 
-/* ── Keyframes ── */
-@keyframes fadeUp {
-  from { opacity: 0; transform: translateY(16px); }
-  to   { opacity: 1; transform: translateY(0); }
+/* ── Animations ── */
+@keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes blink{0%,100%{opacity:.35;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}
+
+/* ══ HERO ══════════════════════════════════════════ */
+.lc-hero{
+  background:var(--navy);
+  border-radius:0 0 24px 24px;
+  padding:3rem 2.5rem 2.5rem;
+  margin:0 -1.5rem 2rem;
+  position:relative;
+  overflow:hidden;
+  animation:fadeIn .6s var(--ease) both;
 }
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+.lc-hero::before{
+  content:'';
+  position:absolute;inset:0;
+  background:radial-gradient(ellipse 70% 80% at 95% 10%,rgba(59,91,219,.35) 0%,transparent 70%),
+             radial-gradient(ellipse 50% 60% at 5% 90%,rgba(30,58,138,.4) 0%,transparent 60%);
 }
-@keyframes pulse-dot {
-  0%, 100% { opacity: 0.4; transform: scale(0.85); }
-  50%       { opacity: 1;   transform: scale(1); }
+.lc-hero>*{position:relative;}
+
+.lc-eyebrow{
+  display:inline-flex;align-items:center;gap:8px;
+  font-size:10px;font-weight:600;letter-spacing:.2em;
+  text-transform:uppercase;color:rgba(255,255,255,.55);
+  margin-bottom:.9rem;
 }
-@keyframes shimmer-line {
-  0%   { background-position: -600px 0; }
-  100% { background-position: 600px 0; }
+.lc-dot{
+  width:6px;height:6px;border-radius:50%;
+  background:#60a5fa;
+  animation:blink 2.2s ease-in-out infinite;
 }
 
-/* ══════════════════════════════════════════════
-   HERO SECTION
-══════════════════════════════════════════════ */
-.lc-hero-wrap {
-  position: relative;
-  padding: 4rem 0 2.5rem;
-  animation: fadeUp 0.8s var(--ease) both;
-  overflow: hidden;
+.lc-title{
+  font-family:'Playfair Display',Georgia,serif;
+  font-size:clamp(34px,5vw,50px);
+  font-weight:700;
+  color:#fff;
+  line-height:1.06;
+  letter-spacing:-.025em;
+  margin:0 0 .25rem;
+}
+.lc-title em{
+  font-style:italic;
+  font-weight:400;
+  color:rgba(255,255,255,.7);
 }
 
-/* Decorative rule line behind title */
-.lc-hero-wrap::before {
-  content: '';
-  position: absolute;
-  top: 5.2rem;
-  left: -1.5rem;
-  right: -1.5rem;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--navy-border) 20%, var(--navy-border) 80%, transparent);
-  opacity: 0.6;
+.lc-sub{
+  font-size:14px;font-weight:300;
+  color:rgba(255,255,255,.6);
+  line-height:1.7;max-width:500px;
+  margin:.8rem 0 1.6rem;
 }
 
-.lc-eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--navy-mid);
-  margin-bottom: 1.1rem;
+.lc-codes{display:flex;flex-wrap:wrap;gap:7px;}
+.lc-code-chip{
+  font-size:10.5px;font-weight:500;letter-spacing:.05em;
+  color:rgba(255,255,255,.75);
+  background:rgba(255,255,255,.1);
+  border:1px solid rgba(255,255,255,.18);
+  padding:5px 13px;border-radius:6px;
+  backdrop-filter:blur(4px);
 }
 
-.lc-eyebrow-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--navy-mid);
-  animation: pulse-dot 2.4s ease-in-out infinite;
+/* ══ ALERTS ════════════════════════════════════════ */
+.lc-alert{
+  display:flex;align-items:flex-start;gap:11px;
+  background:var(--navy-xlight);
+  border-left:3px solid var(--navy-mid);
+  border-radius:0 10px 10px 0;
+  padding:14px 18px;margin-bottom:1.5rem;
+  font-size:13.5px;color:var(--navy);line-height:1.6;
+}
+.lc-correction{
+  display:flex;align-items:flex-start;gap:9px;
+  background:#fefce8;border-left:3px solid #ca8a04;
+  border-radius:0 8px 8px 0;
+  padding:10px 15px;margin-bottom:12px;
+  font-size:12.5px;color:#713f12;line-height:1.55;
+  animation:fadeIn .3s ease both;
 }
 
-.lc-eyebrow-line {
-  display: inline-block;
-  width: 28px;
-  height: 1.5px;
-  background: var(--navy-mid);
-  opacity: 0.5;
+/* ══ SAMPLE QUESTIONS ══════════════════════════════ */
+.lc-samples-label{
+  font-size:10px;font-weight:600;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--slate-muted);
+  margin-bottom:.9rem;
 }
 
-.lc-title {
-  font-family: 'Playfair Display', Georgia, serif;
-  font-size: clamp(36px, 5vw, 52px);
-  font-weight: 700;
-  color: var(--navy);
-  line-height: 1.05;
-  letter-spacing: -0.02em;
-  margin-bottom: 0.2rem;
+.stButton>button{
+  background:var(--white)!important;
+  color:var(--ink-3)!important;
+  border:1px solid var(--slate-border)!important;
+  border-radius:10px!important;
+  padding:13px 16px!important;
+  font-size:13px!important;font-weight:400!important;
+  font-family:'DM Sans',sans-serif!important;
+  text-align:left!important;line-height:1.5!important;
+  width:100%!important;cursor:pointer!important;
+  box-shadow:var(--sh-xs)!important;
+  transition:all .2s var(--ease)!important;
+}
+.stButton>button:hover{
+  background:var(--navy-xlight)!important;
+  border-color:var(--navy-border)!important;
+  color:var(--navy)!important;
+  transform:translateY(-1px)!important;
+  box-shadow:var(--sh-sm)!important;
 }
 
-.lc-title-italic {
-  font-style: italic;
-  font-weight: 400;
-  color: var(--slate);
-}
-
-.lc-sub {
-  font-size: 15px;
-  font-weight: 300;
-  color: var(--slate);
-  line-height: 1.7;
-  max-width: 520px;
-  margin-top: 1rem;
-}
-
-/* Code chips row */
-.lc-codes {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 1.6rem;
-}
-
-.lc-code-chip {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  color: var(--navy-mid);
-  background: var(--navy-xlight);
-  border: 1px solid var(--navy-border);
-  padding: 5px 14px;
-  border-radius: 4px;
-}
-
-/* ── Divider ── */
-.lc-rule {
-  height: 1px;
-  background: var(--slate-border);
-  margin: 2.25rem 0 2rem;
-  opacity: 0.7;
-}
-
-/* ══════════════════════════════════════════════
-   ALERT / NOTICE BANNERS
-══════════════════════════════════════════════ */
-.lc-alert {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  background: var(--navy-xlight);
-  border-left: 3px solid var(--navy-mid);
-  border-radius: 0 8px 8px 0;
-  padding: 14px 18px;
-  margin-bottom: 1.5rem;
-  font-size: 13.5px;
-  color: var(--navy);
-  line-height: 1.6;
-}
-
-.lc-correction {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  background: #fefce8;
-  border-left: 3px solid #ca8a04;
-  border-radius: 0 8px 8px 0;
-  padding: 11px 16px;
-  margin-bottom: 12px;
-  font-size: 13px;
-  color: #713f12;
-  line-height: 1.55;
-  animation: fadeIn 0.3s ease both;
-}
-
-/* ══════════════════════════════════════════════
-   SAMPLE QUESTIONS
-══════════════════════════════════════════════ */
-.lc-samples-label {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--slate-muted);
-  margin-bottom: 1rem;
-}
-
-.stButton > button {
-  background: var(--white);
-  color: var(--ink-3);
-  border: 1px solid var(--slate-border);
-  border-radius: 8px;
-  padding: 14px 16px;
-  font-size: 13px;
-  font-weight: 400;
-  font-family: 'Sora', sans-serif;
-  text-align: left;
-  line-height: 1.5;
-  width: 100%;
-  cursor: pointer;
-  box-shadow: var(--shadow-xs);
-  transition: all 0.22s var(--ease);
-  position: relative;
-  overflow: hidden;
-}
-
-.stButton > button::before {
-  content: '';
-  position: absolute;
-  left: 0; top: 0; bottom: 0;
-  width: 3px;
-  background: var(--navy-mid);
-  opacity: 0;
-  transition: opacity 0.2s ease;
-  border-radius: 0;
-}
-
-.stButton > button:hover {
-  background: var(--navy-xlight);
-  border-color: var(--navy-border);
-  color: var(--navy);
-  transform: translateX(2px);
-  box-shadow: var(--shadow-sm);
-}
-
-.stButton > button:hover::before { opacity: 1; }
-.stButton > button:active { transform: translateX(1px); box-shadow: var(--shadow-xs); }
-.stButton > button:focus-visible { outline: 2px solid var(--navy-mid); outline-offset: 2px; }
-
-/* ══════════════════════════════════════════════
-   CHAT MESSAGES
-══════════════════════════════════════════════ */
-[data-testid="stChatMessage"] {
-  background: transparent;
-  border: none;
-  padding: 0.2rem 0;
-  animation: fadeUp 0.4s var(--ease) both;
+/* ══ CHAT MESSAGES ══════════════════════════════════ */
+[data-testid="stChatMessage"]{
+  background:transparent;border:none;
+  padding:.15rem 0;
+  animation:fadeUp .35s var(--ease) both;
 }
 
 /* User bubble */
-[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {
-  background: var(--navy);
-  border-radius: 16px 16px 4px 16px;
-  padding: 14px 20px;
-  margin-left: 80px;
-  box-shadow: var(--shadow-sm);
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]){
+  background:var(--navy)!important;
+  border-radius:18px 18px 4px 18px!important;
+  padding:13px 20px!important;
+  margin-left:72px!important;
+  box-shadow:var(--sh-sm)!important;
 }
-
 [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"])
-[data-testid="stChatMessageContent"] {
-  color: rgba(255,255,255,0.92) !important;
-  font-size: 14.5px;
-  line-height: 1.65;
-}
-
+[data-testid="stChatMessageContent"],
 [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"])
-[data-testid="stChatMessageContent"] p {
-  color: rgba(255,255,255,0.92) !important;
+[data-testid="stChatMessageContent"] p{
+  color:rgba(255,255,255,.9)!important;
+  font-size:14px!important;line-height:1.65!important;
 }
 
 /* Assistant card */
-[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) {
-  background: var(--white);
-  border: 1px solid var(--slate-border);
-  border-radius: 4px 16px 16px 16px;
-  padding: 22px 24px 18px;
-  margin-right: 40px;
-  box-shadow: var(--shadow-sm);
-  transition: box-shadow 0.3s var(--ease);
-  position: relative;
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]){
+  background:var(--white)!important;
+  border:1px solid var(--slate-border)!important;
+  border-top:3px solid var(--navy)!important;
+  border-radius:4px 18px 18px 18px!important;
+  padding:20px 24px 16px!important;
+  margin-right:36px!important;
+  box-shadow:var(--sh-sm)!important;
+  transition:box-shadow .25s var(--ease)!important;
+}
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]):hover{
+  box-shadow:var(--sh-md)!important;
 }
 
-[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"])::after {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, var(--navy) 0%, var(--navy-mid) 50%, #60a5fa 100%);
-  border-radius: 4px 16px 0 0;
+/* Typography inside assistant card */
+[data-testid="stChatMessageContent"]{
+  font-size:14.5px!important;line-height:1.78!important;
+  color:var(--ink-2)!important;font-weight:300!important;
 }
-
-[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]):hover {
-  box-shadow: var(--shadow-md);
+[data-testid="stChatMessageContent"] p{margin:0 0 .65rem!important;}
+[data-testid="stChatMessageContent"] p:last-child{margin-bottom:0!important;}
+[data-testid="stChatMessageContent"] strong{color:var(--navy)!important;font-weight:600!important;}
+[data-testid="stChatMessageContent"] em{color:var(--slate)!important;}
+[data-testid="stChatMessageContent"] blockquote{
+  border-left:2px solid var(--navy-border)!important;
+  margin:.7rem 0!important;padding:5px 0 5px 14px!important;
+  color:var(--slate)!important;font-style:italic!important;
+  font-size:13.5px!important;
+  background:var(--navy-xlight)!important;
+  border-radius:0 6px 6px 0!important;
 }
-
-/* Message content typography */
-[data-testid="stChatMessageContent"] {
-  font-size: 14.5px;
-  line-height: 1.75;
-  color: var(--ink-2);
-  font-family: 'Sora', sans-serif;
-  font-weight: 300;
+[data-testid="stChatMessageContent"] h3{
+  font-family:'Playfair Display',serif!important;
+  font-size:15px!important;font-weight:700!important;
+  color:var(--navy)!important;
+  margin:1.2rem 0 .45rem!important;
+  padding-bottom:5px!important;
+  border-bottom:1px solid var(--navy-border)!important;
 }
-
-[data-testid="stChatMessageContent"] p { margin: 0 0 0.7rem; }
-[data-testid="stChatMessageContent"] p:last-child { margin-bottom: 0; }
-
-[data-testid="stChatMessageContent"] strong {
-  color: var(--navy);
-  font-weight: 600;
-}
-
-[data-testid="stChatMessageContent"] em {
-  color: var(--slate);
-  font-style: italic;
-}
-
-[data-testid="stChatMessageContent"] blockquote {
-  border-left: 2px solid var(--slate-border);
-  margin: 0.8rem 0;
-  padding: 6px 0 6px 16px;
-  color: var(--slate);
-  font-style: italic;
-  font-size: 13.5px;
-  font-weight: 300;
-  background: var(--slate-light);
-  border-radius: 0 6px 6px 0;
-}
-
-[data-testid="stChatMessageContent"] h3 {
-  font-family: 'Playfair Display', serif;
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--navy);
-  margin: 1.25rem 0 0.5rem;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--navy-border);
-  letter-spacing: -0.01em;
-}
-
 [data-testid="stChatMessageContent"] ul,
-[data-testid="stChatMessageContent"] ol {
-  padding-left: 1.5rem;
-  margin: 0.5rem 0 0.75rem;
+[data-testid="stChatMessageContent"] ol{
+  padding-left:1.4rem!important;margin:.4rem 0 .7rem!important;
+}
+[data-testid="stChatMessageContent"] li{margin-bottom:.35rem!important;}
+[data-testid="stChatMessageContent"] code{
+  background:var(--navy-xlight)!important;
+  color:var(--navy)!important;
+  padding:2px 6px!important;border-radius:4px!important;
+  font-size:12px!important;
 }
 
-[data-testid="stChatMessageContent"] li { margin-bottom: 0.4rem; }
-
-[data-testid="stChatMessageContent"] code {
-  background: var(--navy-xlight);
-  color: var(--navy);
-  padding: 2px 7px;
-  border-radius: 4px;
-  font-size: 12px;
-  font-family: 'SF Mono', 'Fira Code', monospace;
+/* Source chips row */
+.lc-src-row{
+  display:flex;flex-wrap:wrap;align-items:center;gap:6px;
+  margin-bottom:14px;padding-bottom:13px;
+  border-bottom:1px solid var(--slate-border);
+}
+.lc-src-label{
+  font-size:9.5px;font-weight:600;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--slate-muted);margin-right:3px;
+}
+.lc-src-chip{
+  font-size:10px;font-weight:600;letter-spacing:.06em;
+  text-transform:uppercase;color:#fff;
+  background:var(--navy);padding:4px 11px;border-radius:5px;
+}
+.lc-none-chip{
+  font-size:10px;font-weight:400;color:var(--slate-muted);
+  background:var(--slate-light);border:1px solid var(--slate-border);
+  padding:4px 11px;border-radius:5px;font-style:italic;
 }
 
-/* Source chips */
-.lc-src-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 16px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--slate-border);
+/* ══ CHAT INPUT ═════════════════════════════════════ */
+[data-testid="stChatInput"]{
+  background:var(--white)!important;
+  border:1.5px solid var(--slate-border)!important;
+  border-radius:14px!important;
+  box-shadow:var(--sh-sm)!important;
+  transition:all .22s var(--ease)!important;
+}
+[data-testid="stChatInput"]:focus-within{
+  border-color:var(--navy-mid)!important;
+  box-shadow:0 0 0 3px rgba(30,58,138,.09),var(--sh-md)!important;
+}
+[data-testid="stChatInput"] textarea{
+  color:var(--ink)!important;
+  font-size:14.5px!important;
+  font-family:'DM Sans',sans-serif!important;
+}
+[data-testid="stChatInput"] textarea::placeholder{color:var(--slate-muted)!important;}
+[data-testid="stBottomBlockContainer"]{
+  background:linear-gradient(to top,#f8fafc 70%,transparent)!important;
+  padding-top:1.25rem!important;
 }
 
-.lc-src-label {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--slate-muted);
-  margin-right: 4px;
+/* ══ SPINNER ════════════════════════════════════════ */
+[data-testid="stSpinner"]>div>div{
+  border-color:var(--slate-border)!important;
+  border-top-color:var(--navy-mid)!important;
 }
 
-.lc-src-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--white);
-  background: var(--navy);
-  padding: 4px 11px;
-  border-radius: 4px;
+/* ══ FOOTER ═════════════════════════════════════════ */
+.lc-footer{
+  font-size:11px;color:var(--slate-muted);
+  text-align:center;margin-top:2.5rem;
+  line-height:1.9;letter-spacing:.03em;
 }
-
-.lc-none-chip {
-  font-size: 10.5px;
-  font-weight: 400;
-  color: var(--slate-muted);
-  background: var(--slate-light);
-  border: 1px solid var(--slate-border);
-  padding: 4px 11px;
-  border-radius: 4px;
-  font-style: italic;
-}
-
-/* ══════════════════════════════════════════════
-   CHAT INPUT
-══════════════════════════════════════════════ */
-[data-testid="stChatInput"] {
-  background: var(--white) !important;
-  border: 1.5px solid var(--slate-border) !important;
-  border-radius: 12px !important;
-  box-shadow: var(--shadow-sm) !important;
-  transition: all 0.25s var(--ease) !important;
-}
-
-[data-testid="stChatInput"]:focus-within {
-  border-color: var(--navy-mid) !important;
-  box-shadow: 0 0 0 4px rgba(30,58,138,0.08), var(--shadow-md) !important;
-}
-
-[data-testid="stChatInput"] textarea {
-  color: var(--ink) !important;
-  font-size: 14.5px !important;
-  font-family: 'Sora', sans-serif !important;
-  font-weight: 300 !important;
-}
-
-[data-testid="stChatInput"] textarea::placeholder {
-  color: var(--slate-muted) !important;
-}
-
-[data-testid="stBottomBlockContainer"] {
-  background: linear-gradient(to top, var(--white) 75%, transparent) !important;
-  padding-top: 1.5rem !important;
-}
-
-/* ══════════════════════════════════════════════
-   SPINNER
-══════════════════════════════════════════════ */
-[data-testid="stSpinner"] > div > div {
-  border-color: var(--slate-border) !important;
-  border-top-color: var(--navy-mid) !important;
-}
-
-/* ══════════════════════════════════════════════
-   FOOTER
-══════════════════════════════════════════════ */
-.lc-footer {
-  font-size: 11px;
-  font-weight: 400;
-  color: var(--slate-muted);
-  text-align: center;
-  margin-top: 2.5rem;
-  letter-spacing: 0.04em;
-  line-height: 1.8;
-}
-
-.lc-footer-divider {
-  display: inline-block;
-  margin: 0 8px;
-  opacity: 0.4;
-}
+.lc-footer span{margin:0 7px;opacity:.4;}
 
 /* ── Scrollbar ── */
-::-webkit-scrollbar { width: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--slate-border); border-radius: 999px; }
-::-webkit-scrollbar-thumb:hover { background: var(--slate); }
-
-::selection { background: var(--navy); color: var(--white); }
+::-webkit-scrollbar{width:5px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--slate-border);border-radius:999px;}
+::selection{background:var(--navy);color:#fff;}
 </style>
 """, unsafe_allow_html=True)
 
 
-# ── Corpus loading ─────────────────────────────────────────────────────────────
+# ── Corpus ────────────────────────────────────────────────────────────────────
 @st.cache_resource
 def get_corpus():
     return corpus.load_corpus()
@@ -527,30 +328,31 @@ CFG, CORPUS_DATA = get_corpus()
 LOADED = dict(CORPUS_DATA)
 
 
-# ── AWS Bedrock client ─────────────────────────────────────────────────────────
+# ── Bedrock client (API key auth) ─────────────────────────────────────────────
 @st.cache_resource
 def get_bedrock_client():
     try:
+        api_key = st.secrets.get("AWS_BEARER_TOKEN_BEDROCK", "")
+        region  = st.secrets.get("AWS_REGION", "ap-south-1")
+        if api_key:
+            os.environ["AWS_BEARER_TOKEN_BEDROCK"] = api_key
         return boto3.client(
             service_name="bedrock-runtime",
-            region_name=st.secrets.get("AWS_REGION", "us-east-1"),
-            aws_access_key_id=st.secrets.get("AWS_ACCESS_KEY_ID", ""),
-            aws_secret_access_key=st.secrets.get("AWS_SECRET_ACCESS_KEY", ""),
+            region_name=region,
         )
     except Exception:
         return None
 
 
-def _has_credentials() -> bool:
+def _has_key() -> bool:
     try:
-        k = st.secrets.get("AWS_ACCESS_KEY_ID", "")
-        s = st.secrets.get("AWS_SECRET_ACCESS_KEY", "")
-        return bool(k and s and k.strip() and s.strip())
+        k = st.secrets.get("AWS_BEARER_TOKEN_BEDROCK", "")
+        return bool(k and k.strip())
     except Exception:
         return False
 
 
-# ── System prompt ──────────────────────────────────────────────────────────────
+# ── System prompt ─────────────────────────────────────────────────────────────
 SYSTEM = """You are a precise Indian labour law reference assistant for HR professionals and legal teams.
 
 You receive statutory text from India's four Labour Codes and their Central Rules, plus a list of any codes that had NO PROVISION found for the query.
@@ -586,68 +388,54 @@ BLOCK 3 — CLOSING LINE
 1. Block 1: plain English only — never quote statute here.
 2. Block 2: reproduce statutory text faithfully — never paraphrase here.
 3. Use only the supplied statutory text. No outside knowledge or case law.
-4. Exception — if zero statutory text was supplied: write Block 1 saying so, skip Block 2, write Block 3.
+4. If zero statutory text was supplied: write Block 1 saying so, skip Block 2, write Block 3.
 5. Never write Block 3 before Block 2 is complete."""
 
 
-# ── Streaming via Bedrock ──────────────────────────────────────────────────────
+# ── Streaming ─────────────────────────────────────────────────────────────────
 def _stream(messages: list[dict], system: str):
-    """Generator → yields text fragments for st.write_stream."""
     client = get_bedrock_client()
     if not client:
-        yield "⚠️  Could not initialise the AWS Bedrock client. Check your secrets."
+        yield "⚠️ Could not initialise Bedrock client. Check your secrets."
         return
-    if not _has_credentials():
-        yield "⚠️  Add **AWS_ACCESS_KEY_ID**, **AWS_SECRET_ACCESS_KEY**, and **AWS_REGION** in *App → Settings → Secrets*."
+    if not _has_key():
+        yield "⚠️ Add **AWS_BEARER_TOKEN_BEDROCK** and **AWS_REGION** in *App → Settings → Secrets*."
         return
 
-    body = {
+    body = json.dumps({
         "anthropic_version": "bedrock-2023-05-31",
         "max_tokens": 4096,
         "system": system,
         "messages": messages,
         "temperature": 0.15,
-    }
+    })
 
     try:
-        response = client.invoke_model_with_response_stream(
+        resp = client.invoke_model_with_response_stream(
             modelId=MODEL_ID,
-            body=json.dumps(body),
+            body=body,
             contentType="application/json",
             accept="application/json",
         )
-        stream = response.get("body")
-        if not stream:
-            yield "⚠️  Empty response from Bedrock."
-            return
-
-        for event in stream:
+        for event in resp.get("body", []):
             chunk = event.get("chunk")
             if not chunk:
                 continue
-            payload = json.loads(chunk["bytes"].decode("utf-8"))
-            event_type = payload.get("type", "")
-            if event_type == "content_block_delta":
+            payload = json.loads(chunk["bytes"].decode())
+            if payload.get("type") == "content_block_delta":
                 delta = payload.get("delta", {})
                 if delta.get("type") == "text_delta":
                     text = delta.get("text", "")
                     if text:
                         yield text
-            elif event_type == "message_stop":
-                break
-
-    except client.exceptions.ValidationException as e:
-        yield f"\n\n⚠️  Validation error: {e}"
-    except client.exceptions.ModelNotReadyException:
-        yield "\n\n⚠️  Model not ready. Please try again in a moment."
     except Exception as e:
-        yield f"\n\n⚠️  Bedrock error: {e}"
+        yield f"\n\n⚠️ Bedrock error: {e}"
 
 
-# ── Pipeline helpers ───────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 def build_prompt(query: str, all_results: dict) -> str:
     grounding = corpus.render_all_results(all_results)
-    no_prov = [res["meta"]["short"] for res in all_results.values() if not res["found"]]
+    no_prov   = [r["meta"]["short"] for r in all_results.values() if not r["found"]]
     parts = [f"=== STATUTORY TEXT ===\n{grounding}"]
     if no_prov:
         parts.append(
@@ -659,15 +447,21 @@ def build_prompt(query: str, all_results: dict) -> str:
     return "\n\n".join(parts)
 
 
-def _correction_html(corrections: list[tuple[str, str]]) -> str:
+def _correction_html(corrections):
     pairs = ", ".join(
-        f'<strong>{orig}</strong> → <strong>{fix}</strong>'
-        for orig, fix in corrections
+        f'<strong>{o}</strong> → <strong>{f}</strong>'
+        for o, f in corrections
     )
+    return f'<div class="lc-correction">✏️&nbsp; Interpreted as: {pairs}</div>'
+
+
+def _src_row(sources, no_provision):
+    src_html  = "".join(f'<span class="lc-src-chip">📋 {s}</span>'  for s in sources)
+    none_html = "".join(f'<span class="lc-none-chip">∅ {n}</span>' for n in no_provision)
     return (
-        f'<div class="lc-correction">'
-        f'<span>✏️</span> '
-        f'Interpreted as: {pairs}'
+        f'<div class="lc-src-row">'
+        f'<span class="lc-src-label">Sources</span>'
+        f'{src_html}{none_html}'
         f'</div>'
     )
 
@@ -683,48 +477,33 @@ def _submit(q: str):
     st.session_state.pending = q
 
 
-# ══════════════════════════════════════════════
-# HERO
-# ══════════════════════════════════════════════
-chips_html = "".join(
+# ══ HERO ══════════════════════════════════════════════════════════════════════
+chips = "".join(
     f'<span class="lc-code-chip">{e["meta"]["short"]}</span>'
     for e in LOADED.values()
 )
-
 st.markdown(f"""
-<div class="lc-hero-wrap">
-  <div class="lc-eyebrow">
-    <span class="lc-eyebrow-dot"></span>
-    Indian Labour Codes
-    <span class="lc-eyebrow-line"></span>
-    Legal Reference
-  </div>
-  <h1 class="lc-title">Labour Codes<br><span class="lc-title-italic">Assistant</span></h1>
-  <p class="lc-sub">
-    Every answer grounded in the four Labour Codes and their Central Rules —
-    precise Section and Rule citations, every time.
-  </p>
-  <div class="lc-codes">{chips_html}</div>
+<div class="lc-hero">
+  <div class="lc-eyebrow"><span class="lc-dot"></span>Indian Labour Codes · Legal Reference</div>
+  <h1 class="lc-title">Labour Codes <em>Assistant</em></h1>
+  <p class="lc-sub">Every answer grounded in the four Labour Codes and their Central Rules —
+  precise Section and Rule citations, every time.</p>
+  <div class="lc-codes">{chips}</div>
 </div>
 """, unsafe_allow_html=True)
 
-if not _has_credentials():
+if not _has_key():
     st.markdown(
-        '<div class="lc-alert">'
-        '⚙️&nbsp;&nbsp;Add <strong>AWS_ACCESS_KEY_ID</strong>, '
-        '<strong>AWS_SECRET_ACCESS_KEY</strong>, and <strong>AWS_REGION</strong> '
-        'in <em>App → Settings → Secrets</em> to enable answers.'
-        '</div>',
+        '<div class="lc-alert">⚙️&nbsp; Add <strong>AWS_BEARER_TOKEN_BEDROCK</strong> '
+        'and <strong>AWS_REGION</strong> in <em>App → Settings → Secrets</em> to activate.</div>',
         unsafe_allow_html=True,
     )
 
-st.markdown('<div class="lc-rule"></div>', unsafe_allow_html=True)
-
-# ── Chat input ────────────────────────────────────────────────────────────────
+# ── Chat input ─────────────────────────────────────────────────────────────────
 if prompt := st.chat_input("Ask anything — e.g. What are the conditions for retrenchment?"):
     _submit(prompt)
 
-# ── Render history ────────────────────────────────────────────────────────────
+# ── History ────────────────────────────────────────────────────────────────────
 for msg in st.session_state.messages:
     if msg["role"] == "user":
         with st.chat_message("user", avatar="👤"):
@@ -733,21 +512,11 @@ for msg in st.session_state.messages:
         with st.chat_message("assistant", avatar="⚖️"):
             if msg.get("corrections"):
                 st.markdown(_correction_html(msg["corrections"]), unsafe_allow_html=True)
-            src  = msg.get("sources", [])
-            none = msg.get("no_provision", [])
-            if src or none:
-                src_html  = "".join(f'<span class="lc-src-chip">📋 {s}</span>' for s in src)
-                none_html = "".join(f'<span class="lc-none-chip">∅ {n}</span>' for n in none)
-                st.markdown(
-                    f'<div class="lc-src-row">'
-                    f'<span class="lc-src-label">Sources</span>'
-                    f'{src_html}{none_html}'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
+            if msg.get("sources") or msg.get("no_provision"):
+                st.markdown(_src_row(msg.get("sources", []), msg.get("no_provision", [])), unsafe_allow_html=True)
             st.markdown(msg["content"])
 
-# ── Sample questions ──────────────────────────────────────────────────────────
+# ── Sample questions ───────────────────────────────────────────────────────────
 if not st.session_state.messages and not st.session_state.pending:
     st.markdown('<div class="lc-samples-label">Try asking</div>', unsafe_allow_html=True)
     samples = [
@@ -760,9 +529,9 @@ if not st.session_state.messages and not st.session_state.pending:
     ]
     c1, c2 = st.columns(2)
     for i, s in enumerate(samples):
-        (c1 if i % 2 == 0 else c2).button(s, key=f"samp{i}", on_click=_submit, args=(s,))
+        (c1 if i % 2 == 0 else c2).button(s, key=f"s{i}", on_click=_submit, args=(s,))
 
-# ── Process pending question ──────────────────────────────────────────────────
+# ── Process ────────────────────────────────────────────────────────────────────
 if st.session_state.pending:
     raw_q = st.session_state.pending
     st.session_state.pending = None
@@ -774,33 +543,23 @@ if st.session_state.pending:
         st.markdown(raw_q)
 
     with st.spinner("Searching the codes…"):
-        all_results = corpus.search_all(LOADED, corrected_q, k=4)
+        all_results  = corpus.search_all(LOADED, corrected_q, k=4)
 
-    sources      = [res["meta"]["short"] for res in all_results.values() if res["found"]]
-    no_provision = [res["meta"]["short"] for res in all_results.values() if not res["found"]]
+    sources      = [r["meta"]["short"] for r in all_results.values() if r["found"]]
+    no_provision = [r["meta"]["short"] for r in all_results.values() if not r["found"]]
     user_msg     = build_prompt(corrected_q, all_results)
 
     with st.chat_message("assistant", avatar="⚖️"):
         if corrections:
             st.markdown(_correction_html(corrections), unsafe_allow_html=True)
-
         if sources or no_provision:
-            src_html  = "".join(f'<span class="lc-src-chip">📋 {s}</span>' for s in sources)
-            none_html = "".join(f'<span class="lc-none-chip">∅ {n}</span>' for n in no_provision)
-            st.markdown(
-                f'<div class="lc-src-row">'
-                f'<span class="lc-src-label">Sources</span>'
-                f'{src_html}{none_html}'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
+            st.markdown(_src_row(sources, no_provision), unsafe_allow_html=True)
 
         if not sources:
-            loaded_names = " · ".join(e["meta"]["short"] for e in LOADED.values())
+            names    = " · ".join(e["meta"]["short"] for e in LOADED.values())
             response = (
-                f"No relevant provisions were found across any of the loaded codes "
-                f"(**{loaded_names}**) for this query. "
-                "Please try rephrasing, or ask about a specific Section or topic covered by these Codes."
+                f"No relevant provisions were found across **{names}** for this query. "
+                "Please try rephrasing, or ask about a specific Section or topic."
             )
             st.markdown(response)
         else:
@@ -809,21 +568,21 @@ if st.session_state.pending:
             )
 
     st.session_state.messages.append({
-        "role": "assistant",
-        "content": response,
-        "sources": sources,
+        "role":         "assistant",
+        "content":      response,
+        "sources":      sources,
         "no_provision": no_provision,
-        "corrections": corrections,
+        "corrections":  corrections,
     })
     st.rerun()
 
-# ── Footer ────────────────────────────────────────────────────────────────────
+# ── Footer ─────────────────────────────────────────────────────────────────────
 st.markdown(
     '<div class="lc-footer">'
-    'Informational reference for HR &amp; Legal teams'
-    '<span class="lc-footer-divider">·</span>'
-    'Powered by Claude Sonnet 4.6 via AWS Bedrock'
-    '<span class="lc-footer-divider">·</span>'
+    'Legal reference for HR &amp; Legal teams'
+    '<span>·</span>'
+    'Claude Sonnet 4.6 via AWS Bedrock'
+    '<span>·</span>'
     'Cited statutory provisions are authoritative'
     '</div>',
     unsafe_allow_html=True,
