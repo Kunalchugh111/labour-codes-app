@@ -148,6 +148,17 @@ def load_corpus():
             for ch in parse_doc(rules, "rules"):
                 ch["source"] = c["central_rules"]["title"]
                 entry["chunks"].append(ch)
+        # repealed Acts this Code subsumed (for "what changed" comparisons)
+        entry["old_acts"] = []
+        for oa in c.get("old_acts", []):
+            txt = _read(oa["file"])
+            if not txt:
+                continue
+            chunks = parse_doc(txt, "code")
+            for ch in chunks:
+                ch["source"] = oa["title"]
+            if chunks:
+                entry["old_acts"].append({"meta": oa, "chunks": chunks})
         corpus[c["id"]] = entry
     return cfg, corpus
 
@@ -206,13 +217,17 @@ def _score_chunk(ch: dict, terms: list[str], explicit: set[int], definitional: b
     return score
 
 
-def _scored(entry: dict, query: str):
+def _score_list(chunks: list[dict], query: str):
     terms = _terms(query)
     explicit = {int(n) for n in re.findall(r"(?:section|rule)\s+(\d{1,3})", query.lower())}
     definitional = bool(re.search(r"\b(defin|meaning|means|what is|who is)\b", query.lower()))
-    scored = [(_score_chunk(ch, terms, explicit, definitional), ch) for ch in entry["chunks"]]
+    scored = [(_score_chunk(ch, terms, explicit, definitional), ch) for ch in chunks]
     scored.sort(key=lambda x: x[0], reverse=True)
     return scored, definitional
+
+
+def _scored(entry: dict, query: str):
+    return _score_list(entry["chunks"], query)
 
 
 def _code_relevance(entry: dict, query: str) -> float:
@@ -269,6 +284,16 @@ def search_all(corpus_dict: dict, query: str, k: int = 8) -> dict:
         chunks = search(entry, query, k=k) if keep else []
         out[cid] = {"chunks": chunks, "found": bool(chunks), "meta": entry["meta"]}
     return out
+
+
+def search_old(entry: dict, query: str, k: int = 6, min_score: float = _MIN_SCORE) -> list[dict]:
+    """Top provisions from the repealed Acts this Code subsumed, relevant to the query.
+    Used to ground 'what changed vs the old Act' comparisons."""
+    chunks = [ch for oa in entry.get("old_acts", []) for ch in oa["chunks"]]
+    if not chunks:
+        return []
+    scored, _ = _score_list(chunks, query)
+    return [c for s, c in scored[:k] if s >= min_score]
 
 
 _MAX_CHUNK_CHARS = 3000

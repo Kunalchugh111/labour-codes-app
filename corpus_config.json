@@ -13,11 +13,31 @@
         "title": "Code on Wages (Central) Rules, 2020",
         "file": "wages_rules.txt"
       },
-      "replaced_acts": [
-        "The Payment of Wages Act, 1936",
-        "The Minimum Wages Act, 1948",
-        "The Payment of Bonus Act, 1965",
-        "The Equal Remuneration Act, 1976"
+      "old_acts": [
+        {
+          "slug": "payment_of_wages",
+          "title": "The Payment of Wages Act, 1936",
+          "year": 1936,
+          "file": "old_payment_of_wages.txt"
+        },
+        {
+          "slug": "minimum_wages",
+          "title": "The Minimum Wages Act, 1948",
+          "year": 1948,
+          "file": "old_minimum_wages.txt"
+        },
+        {
+          "slug": "payment_of_bonus",
+          "title": "The Payment of Bonus Act, 1965",
+          "year": 1965,
+          "file": "old_payment_of_bonus.txt"
+        },
+        {
+          "slug": "equal_remuneration",
+          "title": "The Equal Remuneration Act, 1976",
+          "year": 1976,
+          "file": "old_equal_remuneration.txt"
+        }
       ]
     },
     {
@@ -31,10 +51,25 @@
         "title": "Industrial Relations (Central) Rules, 2020",
         "file": "ir_rules.txt"
       },
-      "replaced_acts": [
-        "The Trade Unions Act, 1926",
-        "The Industrial Employment (Standing Orders) Act, 1946",
-        "The Industrial Disputes Act, 1947"
+      "old_acts": [
+        {
+          "slug": "trade_unions",
+          "title": "The Trade Unions Act, 1926",
+          "year": 1926,
+          "file": "old_trade_unions.txt"
+        },
+        {
+          "slug": "industrial_employment_standing_orders",
+          "title": "The Industrial Employment (Standing Orders) Act, 1946",
+          "year": 1946,
+          "file": "old_industrial_employment_standing_orders.txt"
+        },
+        {
+          "slug": "industrial_disputes",
+          "title": "The Industrial Disputes Act, 1947",
+          "year": 1947,
+          "file": "old_industrial_disputes.txt"
+        }
       ]
     },
     {
@@ -48,16 +83,61 @@
         "title": "Code on Social Security (Central) Rules, 2020",
         "file": "ss_rules.txt"
       },
-      "replaced_acts": [
-        "The Employees' Compensation Act, 1923",
-        "The Employees' State Insurance Act, 1948",
-        "The Employees' Provident Funds and Miscellaneous Provisions Act, 1952",
-        "The Employment Exchanges (Compulsory Notification of Vacancies) Act, 1959",
-        "The Maternity Benefit Act, 1961",
-        "The Payment of Gratuity Act, 1972",
-        "The Cine-Workers Welfare Fund Act, 1981",
-        "The Building and Other Construction Workers' Welfare Cess Act, 1996",
-        "The Unorganised Workers' Social Security Act, 2008"
+      "old_acts": [
+        {
+          "slug": "employees_compensation",
+          "title": "The Employee's Compensation Act, 1923",
+          "year": 1923,
+          "file": "old_employees_compensation.txt"
+        },
+        {
+          "slug": "employees_state_insurance",
+          "title": "The Employees' State Insurance Act, 1948",
+          "year": 1948,
+          "file": "old_employees_state_insurance.txt"
+        },
+        {
+          "slug": "epf_misc_provisions",
+          "title": "The Employees' Provident Funds and Miscellaneous Provisions Act, 1952",
+          "year": 1952,
+          "file": "old_epf_misc_provisions.txt"
+        },
+        {
+          "slug": "employment_exchanges_cnv",
+          "title": "The Employment Exchanges (Compulsory Notification of Vacancies) Act, 1959",
+          "year": 1959,
+          "file": "old_employment_exchanges_cnv.txt"
+        },
+        {
+          "slug": "maternity_benefit",
+          "title": "The Maternity Benefit Act, 1961",
+          "year": 1961,
+          "file": "old_maternity_benefit.txt"
+        },
+        {
+          "slug": "payment_of_gratuity",
+          "title": "The Payment of Gratuity Act, 1972",
+          "year": 1972,
+          "file": "old_payment_of_gratuity.txt"
+        },
+        {
+          "slug": "cine_workers_welfare_fund",
+          "title": "The Cine-Workers Welfare Fund Act, 1981",
+          "year": 1981,
+          "file": "old_cine_workers_welfare_fund.txt"
+        },
+        {
+          "slug": "bocw_welfare_cess",
+          "title": "The Building and Other Construction Workers' Welfare Cess Act, 1996",
+          "year": 1996,
+          "file": "old_bocw_welfare_cess.txt"
+        },
+        {
+          "slug": "unorganised_workers_ss",
+          "title": "The Unorganised Workers' Social Security Act, 2008",
+          "year": 2008,
+          "file": "old_unorganised_workers_ss.txt"
+        }
       ]
     },
     {
@@ -71,19 +151,85 @@
         "title": "Occupational Safety, Health and Working Conditions (Central) Rules, 2020",
         "file": "osh_rules.txt"
       },
-      "replaced_acts": [
-        "The Factories Act, 1948",
-        "The Mines Act, 1952",
-        "The Dock Workers (Safety, Health and Welfare) Act, 1986",
-        "The Plantations Labour Act, 1951",
-        "The Contract Labour (Regulation and Abolition) Act, 1970",
-        "The Inter-State Migrant Workmen (RE&CS) Act, 1979",
-        "The Working Journalists and other Newspaper Employees (Conditions of Service) Act, 1955",
-        "The Motor Transport Workers Act, 1961",
-        "The Sales Promotion Employees (Conditions of Service) Act, 1976",
-        "The Beedi and Cigar Workers (Conditions of Employment) Act, 1966",
-        "The Cine-Workers and Cinema Theatre Workers (Regulation of Employment) Act, 1981",
-        "The Building and Other Construction Workers (RE&CS) Act, 1996"
+      "old_acts": [
+        {
+          "slug": "factories",
+          "title": "The Factories Act, 1948",
+          "year": 1948,
+          "file": "old_factories.txt"
+        },
+        {
+          "slug": "plantations_labour",
+          "title": "The Plantations Labour Act, 1951",
+          "year": 1951,
+          "file": "old_plantations_labour.txt"
+        },
+        {
+          "slug": "mines",
+          "title": "The Mines Act, 1952",
+          "year": 1952,
+          "file": "old_mines.txt"
+        },
+        {
+          "slug": "working_journalists_cos",
+          "title": "The Working Journalists and other Newspaper Employees (Conditions of Service) and Miscellaneous Provisions Act, 1955",
+          "year": 1955,
+          "file": "old_working_journalists_cos.txt"
+        },
+        {
+          "slug": "working_journalists_wages",
+          "title": "The Working Journalists (Fixation of Rates of Wages) Act, 1958",
+          "year": 1958,
+          "file": "old_working_journalists_wages.txt"
+        },
+        {
+          "slug": "motor_transport_workers",
+          "title": "The Motor Transport Workers Act, 1961",
+          "year": 1961,
+          "file": "old_motor_transport_workers.txt"
+        },
+        {
+          "slug": "beedi_cigar_workers",
+          "title": "The Beedi and Cigar Workers (Conditions of Employment) Act, 1966",
+          "year": 1966,
+          "file": "old_beedi_cigar_workers.txt"
+        },
+        {
+          "slug": "contract_labour",
+          "title": "The Contract Labour (Regulation and Abolition) Act, 1970",
+          "year": 1970,
+          "file": "old_contract_labour.txt"
+        },
+        {
+          "slug": "sales_promotion_employees",
+          "title": "The Sales Promotion Employees (Conditions of Service) Act, 1976",
+          "year": 1976,
+          "file": "old_sales_promotion_employees.txt"
+        },
+        {
+          "slug": "interstate_migrant_workmen",
+          "title": "The Inter-State Migrant Workmen (Regulation of Employment and Conditions of Service) Act, 1979",
+          "year": 1979,
+          "file": "old_interstate_migrant_workmen.txt"
+        },
+        {
+          "slug": "cine_cinema_workers",
+          "title": "The Cine-Workers and Cinema Theatre Workers (Regulation of Employment) Act, 1981",
+          "year": 1981,
+          "file": "old_cine_cinema_workers.txt"
+        },
+        {
+          "slug": "dock_workers_shw",
+          "title": "The Dock Workers (Safety, Health and Welfare) Act, 1986",
+          "year": 1986,
+          "file": "old_dock_workers_shw.txt"
+        },
+        {
+          "slug": "bocw_recs",
+          "title": "The Building and Other Construction Workers (Regulation of Employment and Conditions of Service) Act, 1996",
+          "year": 1996,
+          "file": "old_bocw_recs.txt"
+        }
       ]
     }
   ]
