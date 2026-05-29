@@ -1,7 +1,7 @@
 """
 app.py — Labour Codes Assistant (Streamlit)
-Backend : AWS Bedrock — global.anthropic.claude-sonnet-4-6
-Auth    : AWS_BEARER_TOKEN_BEDROCK in Streamlit secrets
+Backend : AWS Bedrock (Converse API) — amazon.nova-pro-v1:0
+Auth    : AWS_BEARER_TOKEN_BEDROCK + AWS_REGION in Streamlit secrets
 Design  : Legal editorial — deep navy, parchment, gold accent
 """
 
@@ -13,9 +13,9 @@ import streamlit as st
 
 import corpus
 
-# Global cross-Region inference profile — the only option offered from ap-south-1 (Mumbai).
-# Override with the BEDROCK_MODEL_ID secret if you change region or model.
-MODEL_ID = "global.anthropic.claude-sonnet-4-6"
+# Amazon Nova Pro — first-party model, no AWS Marketplace subscription required.
+# Override with the BEDROCK_MODEL_ID secret to use a different Bedrock model.
+MODEL_ID = "amazon.nova-pro-v1:0"
 
 st.set_page_config(
     page_title="Labour Codes Assistant",
@@ -692,7 +692,7 @@ LOADED = dict(CORPUS_DATA)
 def get_bedrock_client():
     try:
         api_key = st.secrets.get("AWS_BEARER_TOKEN_BEDROCK", "")
-        region  = st.secrets.get("AWS_REGION", "ap-south-1")
+        region  = st.secrets.get("AWS_REGION", "us-east-1")
         if api_key:
             os.environ["AWS_BEARER_TOKEN_BEDROCK"] = api_key
         return boto3.client("bedrock-runtime", region_name=region)
@@ -796,20 +796,14 @@ def detect_clarification(query: str) -> dict | None:
     client = get_bedrock_client()
     if not client:
         return None
-    body = json.dumps({
-        "anthropic_version": "bedrock-2023-05-31",
-        "max_tokens": 256,
-        "system": CLARIFY_SYSTEM,
-        "messages": [{"role": "user", "content": query}],
-        "temperature": 0.1,
-    })
     try:
-        resp = client.invoke_model(
-            modelId=_model_id(), body=body,
-            contentType="application/json", accept="application/json"
+        resp = client.converse(
+            modelId=_model_id(),
+            system=[{"text": CLARIFY_SYSTEM}],
+            messages=[{"role": "user", "content": [{"text": query}]}],
+            inferenceConfig={"maxTokens": 256, "temperature": 0.1},
         )
-        raw = json.loads(resp["body"].read())
-        text = raw["content"][0]["text"].strip()
+        text = resp["output"]["message"]["content"][0]["text"].strip()
         if text == "CLEAR":
             return None
         data = json.loads(text)
@@ -830,27 +824,28 @@ def _friendly_bedrock_error(e: Exception) -> str:
     if ("payment" in low or "marketplace subscription" in low
             or "invalid_payment_instrument" in low):
         return (
-            "\n\n⚠️ **The model isn't active yet — finish the one-time AWS Bedrock setup.**\n\n"
-            "AWS no longer has a *Model access* button: Claude is turned on by submitting a "
-            "one-time use-case form, and the Marketplace subscription is created on your first "
-            "call. To complete it:\n"
-            "1. **Billing → Payment preferences** — confirm a valid card is set as default "
-            "(some cards need a small verification charge to clear).\n"
-            "2. **Bedrock Console → Playground** (region `ap-south-1`) — pick "
-            "**Claude Sonnet 4.6**, submit the use-case form, and send a test message. That "
-            "first call creates the subscription now that a card is on file.\n"
-            "3. The identity behind `AWS_BEARER_TOKEN_BEDROCK` needs the "
-            "**`aws-marketplace:Subscribe`** permission — or have an admin run step 2 once.\n"
-            "4. Wait ~2 minutes and try again. If it still fails, open a **free Billing "
-            "support case** with AWS."
+            "\n\n⚠️ **AWS billing isn't active for this account yet.**\n"
+            "Add a valid card in **AWS Console → Billing → Payment preferences** (some cards "
+            "need a small verification charge to clear), wait ~2 minutes, and try again. "
+            "Amazon Nova is a first-party model and needs no Marketplace subscription, so once "
+            "billing is valid it should work."
+        )
+    if ("model identifier is invalid" in low or "resourcenotfound" in low
+            or "is not supported" in low or "isn't supported" in low
+            or "don't have access to the model" in low
+            or "do not have access to the model" in low):
+        return (
+            "\n\n⚠️ **The model isn't available in this AWS region.** Amazon Nova Pro is not "
+            "offered everywhere (e.g. not in Mumbai `ap-south-1`). Set the **`AWS_REGION`** "
+            "secret to a supported region such as `us-east-1` or `ap-southeast-3` (Jakarta) — "
+            "or set **`BEDROCK_MODEL_ID`** to a model your region supports."
         )
     if ("accessdenied" in low or "not authorized" in low
             or "could not be validated" in low):
         return (
-            "\n\n⚠️ **AWS denied access to the model.** In the **Bedrock Console → Playground** "
-            "(region `ap-south-1`), submit the one-time use-case form for **Claude Sonnet 4.6**, "
-            "and confirm `AWS_BEARER_TOKEN_BEDROCK` is valid for that account with "
-            "`bedrock:InvokeModel` and `aws-marketplace:Subscribe` permissions."
+            "\n\n⚠️ **AWS denied access.** Confirm `AWS_BEARER_TOKEN_BEDROCK` is valid and that "
+            "its identity has the `bedrock:InvokeModel` permission, and that `AWS_REGION` is a "
+            "region where the model is available."
         )
     return f"\n\n⚠️ Error contacting the model: {msg}"
 
@@ -864,29 +859,19 @@ def _stream(messages: list[dict]):
         yield "⚠️ Add **AWS_BEARER_TOKEN_BEDROCK** and **AWS_REGION** in *App → Settings → Secrets*."
         return
 
-    body = json.dumps({
-        "anthropic_version": "bedrock-2023-05-31",
-        "max_tokens": 4096,
-        "system": SYSTEM,
-        "messages": messages,
-        "temperature": 0.1,
-    })
+    convo = [{"role": m["role"], "content": [{"text": m["content"]}]} for m in messages]
     try:
-        resp = client.invoke_model_with_response_stream(
-            modelId=_model_id(), body=body,
-            contentType="application/json", accept="application/json",
+        resp = client.converse_stream(
+            modelId=_model_id(),
+            system=[{"text": SYSTEM}],
+            messages=convo,
+            inferenceConfig={"maxTokens": 4096, "temperature": 0.1},
         )
-        for event in resp.get("body", []):
-            chunk = event.get("chunk")
-            if not chunk:
-                continue
-            payload = json.loads(chunk["bytes"].decode())
-            if payload.get("type") == "content_block_delta":
-                delta = payload.get("delta", {})
-                if delta.get("type") == "text_delta":
-                    t = delta.get("text", "")
-                    if t:
-                        yield t
+        for event in resp["stream"]:
+            if "contentBlockDelta" in event:
+                t = event["contentBlockDelta"]["delta"].get("text", "")
+                if t:
+                    yield t
     except Exception as e:
         yield _friendly_bedrock_error(e)
 
@@ -1163,7 +1148,7 @@ if st.session_state.pending:
 st.markdown(
     '<div class="lc-footer">'
     '<strong>HR Compliance Reference</strong>'
-    ' &nbsp;·&nbsp; Claude Sonnet 4.6 via AWS Bedrock'
+    ' &nbsp;·&nbsp; Amazon Nova Pro via AWS Bedrock'
     ' &nbsp;·&nbsp; Always consult a qualified legal advisor'
     '</div>',
     unsafe_allow_html=True,
