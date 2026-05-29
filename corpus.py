@@ -1,10 +1,6 @@
 """
 corpus.py — load the processed code/rules text, split it into citable chunks
 (Sections, Rules, Schedules), and retrieve only the slices relevant to a query.
-
-Why chunk + retrieve: the full corpus is ~hundreds of pages. We never send all of
-it to the model. We send the handful of sections a question actually touches, so
-every answer stays small, fast, and cheap, and the model cites from real text.
 """
 import json
 import re
@@ -18,7 +14,6 @@ STOP = set("""a an the of to in for on and or by with as is are be this that any
 which under section sub clause shall means may not no it its his he him under into
 from per cent rupees within where when been being under code act rules rule""".split())
 
-# ── Synonym expansion for better recall ──────────────────────────────────────
 SYNONYMS: dict[str, list[str]] = {
     "retrench":        ["retrenchment", "retrenched", "retrenching", "layoff", "lay-off"],
     "retrenchment":    ["retrench", "retrenched", "retrenching", "layoff", "lay-off"],
@@ -56,7 +51,6 @@ SYNONYMS: dict[str, list[str]] = {
     "penalty":         ["fine", "punishment", "offence", "contravention"],
 }
 
-# ── Legal vocabulary for typo correction ─────────────────────────────────────
 LEGAL_VOCABULARY = [
     "retrenchment", "termination", "dismissal", "resignation", "discharge",
     "wages", "salary", "remuneration", "earnings", "payment",
@@ -73,21 +67,12 @@ LEGAL_VOCABULARY = [
 ]
 
 
-# ── Typo / spelling correction ────────────────────────────────────────────────
 def correct_query(q: str) -> tuple[str, list[tuple[str, str]]]:
-    """
-    Detect and correct likely misspellings of legal terms.
-
-    Returns:
-        (corrected_query, [(original_word, corrected_word), ...])
-    """
     tokens = q.split()
     corrections: list[tuple[str, str]] = []
     corrected_tokens: list[str] = []
-
     for token in tokens:
         clean = re.sub(r"[^a-z]", "", token.lower())
-        # Only attempt correction on words likely to be legal terms
         if len(clean) >= 5 and clean not in STOP and clean not in LEGAL_VOCABULARY:
             matches = get_close_matches(clean, LEGAL_VOCABULARY, n=1, cutoff=0.72)
             if matches and matches[0] != clean:
@@ -95,13 +80,10 @@ def correct_query(q: str) -> tuple[str, list[tuple[str, str]]]:
                 corrected_tokens.append(matches[0])
                 continue
         corrected_tokens.append(token)
-
     return " ".join(corrected_tokens), corrections
 
 
-# ── Parsing helpers ───────────────────────────────────────────────────────────
 def _split_numbered(text):
-    """Split a block into strictly-increasing top-level numbered items."""
     cands = [(int(m.group(1)), m.start()) for m in re.finditer(r"(?m)^\s{0,4}(\d{1,3})\.\s", text)]
     items, expected, open_at, open_num = [], 1, None, None
     for num, pos in cands:
@@ -130,7 +112,6 @@ def _preview(s, n=150):
 
 
 def parse_doc(text, kind):
-    """kind: 'code' → 'Section N'; 'rules' → 'Rule N'."""
     label = "Section" if kind == "code" else "Rule"
     sched_match = re.search(r"THE\s+[A-Z]+\s+SCHEDULE", text)
     body = text[: sched_match.start()] if sched_match else text
@@ -144,7 +125,6 @@ def parse_doc(text, kind):
     return chunks
 
 
-# ── Loading ───────────────────────────────────────────────────────────────────
 def _read(name):
     p = PROCESSED / name
     return p.read_text(encoding="utf-8") if p.exists() else None
@@ -171,24 +151,16 @@ def load_corpus():
     return cfg, corpus
 
 
-# ── Retrieval ─────────────────────────────────────────────────────────────────
 def _terms(q: str) -> list[str]:
-    """
-    Tokenise query and expand with synonyms for better recall.
-    Also handles root forms (e.g. 'retrench' expands to all retrenchment variants).
-    """
     base = [w for w in re.findall(r"[a-z]{3,}", q.lower()) if w not in STOP]
     expanded: set[str] = set(base)
     for term in base:
-        # Direct synonym lookup
         if term in SYNONYMS:
             expanded.update(SYNONYMS[term])
-        # Check if term is a value (synonym) of any canonical key
         for canonical, syns in SYNONYMS.items():
             if term in syns:
                 expanded.add(canonical)
                 expanded.update(syns)
-        # Root-form matching: if term is a prefix of any legal vocab word (≥5 chars)
         if len(term) >= 5:
             for vocab_word in LEGAL_VOCABULARY:
                 if vocab_word.startswith(term) and vocab_word != term:
@@ -198,15 +170,10 @@ def _terms(q: str) -> list[str]:
     return list(expanded)
 
 
-# ── Score threshold — raised from 2 to 5 to eliminate spurious "found" hits ──
 _MIN_SCORE = 5
 
 
-def search(entry: dict, query: str, k: int = 5, min_score: int = _MIN_SCORE) -> list[dict]:
-    """
-    Return up to k chunks from one code+rules most relevant to the query.
-    Chunks scoring below min_score are excluded to keep grounding tight.
-    """
+def search(entry: dict, query: str, k: int = 8, min_score: int = _MIN_SCORE) -> list[dict]:
     terms = _terms(query)
     explicit = {int(n) for n in re.findall(r"(?:section|rule)\s+(\d{1,3})", query.lower())}
     definitional = bool(re.search(r"\b(defin|meaning|means|what is|who is)\b", query.lower()))
@@ -232,13 +199,7 @@ def search(entry: dict, query: str, k: int = 5, min_score: int = _MIN_SCORE) -> 
     return picks
 
 
-def search_all(corpus_dict: dict, query: str, k: int = 10) -> dict:
-    """
-    Search every loaded code simultaneously.
-
-    Returns:
-        dict: { code_id -> {"chunks": [...], "found": bool, "meta": {...}} }
-    """
+def search_all(corpus_dict: dict, query: str, k: int = 8) -> dict:
     return {
         cid: {"chunks": chunks, "found": bool(chunks), "meta": entry["meta"]}
         for cid, entry in corpus_dict.items()
@@ -246,12 +207,10 @@ def search_all(corpus_dict: dict, query: str, k: int = 10) -> dict:
     }
 
 
-# ── Chunk size: raised from 700 → 3 000 chars so full provisions reach the LLM ─
 _MAX_CHUNK_CHARS = 3000
 
 
 def _trim(text: str) -> str:
-    """Truncate a chunk to _MAX_CHUNK_CHARS, breaking at a sentence boundary if possible."""
     if len(text) <= _MAX_CHUNK_CHARS:
         return text
     cut = text[:_MAX_CHUNK_CHARS]
@@ -266,11 +225,6 @@ def render_chunks(picks: list[dict]) -> str:
 
 
 def render_all_results(all_results: dict) -> str:
-    """
-    Build the grounding text sent to the LLM:
-    - Codes with hits → their chunks (truncated), grouped under a clear heading.
-    - Codes with no hits → omitted from grounding (noted separately via no_provision list).
-    """
     parts = []
     for cid, res in all_results.items():
         if res["found"]:
