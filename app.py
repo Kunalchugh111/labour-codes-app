@@ -412,53 +412,7 @@ section[data-testid="stBottom"] > div {
   animation: fadeIn .3s ease both;
 }
 
-/* ══ CLARIFYING UI ══════════════════════════════════════════════════════════ */
-.lc-clarify-wrap {
-  background: var(--white);
-  border: 1px solid var(--slate-5);
-  border-top: 3px solid var(--navy);
-  border-radius: 4px 14px 14px 14px;
-  padding: 22px 24px;
-  margin: .5rem 0 .5rem 0;
-  margin-right: 40px;
-  box-shadow: var(--s2);
-  animation: fadeUp .35s var(--ease) both;
-}
-.lc-clarify-q {
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--ink);
-  margin-bottom: 14px;
-  line-height: 1.5;
-}
-.lc-clarify-hint {
-  font-size: 11.5px;
-  color: var(--slate-3);
-  margin-top: 10px;
-  font-style: italic;
-}
-
-/* Chip buttons for clarification — styled differently from sample buttons */
-.clarify-chip-row .stButton > button {
-  background: var(--parchment) !important;
-  color: var(--navy-2) !important;
-  border: 1.5px solid var(--gold-border) !important;
-  border-left: 1.5px solid var(--gold-border) !important;
-  border-radius: 999px !important;
-  padding: 7px 18px !important;
-  font-size: 12.5px !important;
-  font-weight: 500 !important;
-  width: auto !important;
-  transform: none !important;
-  letter-spacing: .02em !important;
-}
-.clarify-chip-row .stButton > button:hover {
-  background: var(--navy) !important;
-  border-color: var(--navy) !important;
-  color: #fff !important;
-  transform: translateY(-1px) !important;
-  box-shadow: var(--s2) !important;
-}
+/* (clarifying UI removed) */
 
 /* ══ VERDICT CARD ═══════════════════════════════════════════════════════════ */
 .lc-verdict {
@@ -926,44 +880,9 @@ RULES:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Clarification detection
+# Direct answering (clarification step removed)
 # ─────────────────────────────────────────────────────────────────────────────
-CLARIFY_SYSTEM = """You are a helpful Indian Labour Law assistant.
-
-The HR manager has asked a question. Decide if you need 1–2 clarifying details to give a precise compliance answer.
-
-If the query is already specific enough to answer (e.g. contains numbers, timeframes, specific actions done), respond with:
-CLEAR
-
-If you need clarification, respond with JSON only — no other text:
-{
-  "question": "One short clarifying question (max 12 words)",
-  "chips": ["Option 1", "Option 2", "Option 3", "Option 4"]
-}
-
-Chips should be short (2–5 words each), mutually exclusive, and cover the most likely scenarios.
-Only ask if it materially changes the legal answer. Never ask about the industry or company size unless critical."""
-
-def detect_clarification(query: str) -> dict | None:
-    client = get_bedrock_client()
-    if not client:
-        return None
-    try:
-        resp = client.converse(
-            modelId=_model_id(),
-            system=[{"text": CLARIFY_SYSTEM}],
-            messages=[{"role": "user", "content": [{"text": query}]}],
-            inferenceConfig={"maxTokens": 256, "temperature": 0.1},
-        )
-        text = resp["output"]["message"]["content"][0]["text"].strip()
-        if text == "CLEAR":
-            return None
-        data = json.loads(text)
-        if "question" in data and "chips" in data:
-            return data
-        return None
-    except Exception:
-        return None
+# (Clarification step removed — every query is answered directly, no "which code?" chips.)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1058,16 +977,25 @@ def _is_comparison(query: str) -> bool:
     return bool(_COMPARE_RE.search(query))
 
 
-def _verify_quotes(data: dict, grounding: str) -> dict:
-    """Guardrail: flag each cited quote as verbatim-verified against the supplied statute."""
+def _verify_quotes(data: dict) -> dict:
+    """Guardrail: anchor each citation to the REAL provision in the corpus (show that text —
+    guaranteed verbatim); otherwise verify the model's quote against the full statute, so a
+    genuine quote is never falsely flagged and a fabricated one never passes."""
     if not isinstance(data, dict):
         return data
-    hay = corpus.normalize_for_match(grounding)
     auths = data.get("authorities")
-    if isinstance(auths, list):
-        for a in auths:
-            if isinstance(a, dict) and str(a.get("quote", "")).strip():
-                a["verified"] = corpus.quote_supported(a["quote"], hay)
+    if not isinstance(auths, list):
+        return data
+    hay = corpus.full_corpus_norm(LOADED)
+    for a in auths:
+        if not isinstance(a, dict):
+            continue
+        src = corpus.lookup_citation(LOADED, str(a.get("citation", "")))
+        if src:
+            a["verified"] = True
+            a["source_text"] = src            # display the real provision text
+        elif str(a.get("quote", "")).strip():
+            a["verified"] = corpus.quote_supported(a["quote"], hay)
     return data
 
 
@@ -1135,7 +1063,8 @@ def _bullets(items) -> str:
 def _render_authorities(auths, label: str):
     """Citation pills + a verbatim-trust line + a collapsible panel of the cited
     provisions, each badged verified (✓) or unverified (⚠) by the guardrail."""
-    auths = [a for a in (auths or []) if isinstance(a, dict) and str(a.get("quote", "")).strip()]
+    auths = [a for a in (auths or []) if isinstance(a, dict)
+             and (str(a.get("source_text", "")).strip() or str(a.get("quote", "")).strip())]
     if not auths:
         return
     ntot = len(auths)
@@ -1143,11 +1072,11 @@ def _render_authorities(auths, label: str):
     if any("verified" in a for a in auths):
         if nver == ntot:
             st.markdown(
-                f'<div class="lc-trust ok">✓ All {ntot} quoted provision(s) verified '
+                f'<div class="lc-trust ok">✓ All {ntot} cited provision(s) verified '
                 f'verbatim against the source text</div>', unsafe_allow_html=True)
         else:
             st.markdown(
-                f'<div class="lc-trust warn">⚠ {ntot - nver} of {ntot} quote(s) could not be '
+                f'<div class="lc-trust warn">⚠ {ntot - nver} of {ntot} citation(s) could not be '
                 f'matched to the source — treat those as unverified</div>', unsafe_allow_html=True)
     pills = "".join(
         f'<span class="lc-cite">{_esc(a.get("citation") or "Provision")}</span>' for a in auths)
@@ -1160,9 +1089,10 @@ def _render_authorities(auths, label: str):
             badge = ('<span class="lc-verified">✓ verbatim</span>' if v
                      else '<span class="lc-unverified">⚠ unverified</span>' if v is False else '')
             cls = " unverified" if v is False else ""
+            text = a.get("source_text") or a.get("quote", "")
             st.markdown(
                 f'<div class="lc-auth-cite">{_esc(a.get("citation") or "Provision")} {badge}</div>'
-                f'<blockquote class="lc-auth-quote{cls}">{_esc_ml(a.get("quote", ""))}</blockquote>',
+                f'<blockquote class="lc-auth-quote{cls}">{_esc_ml(text)}</blockquote>',
                 unsafe_allow_html=True)
 
 
@@ -1263,7 +1193,7 @@ def render_answer(data: dict):
 for key, default in [
     ("messages", []),
     ("pending", None),
-    ("awaiting_clarify", None),
+    ("force_compare", False),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -1271,11 +1201,10 @@ for key, default in [
 def _submit(q: str):
     st.session_state.pending = q
 
-def _clarify_pick(chip: str):
-    ctx = st.session_state.awaiting_clarify
-    combined = f"{ctx['original_q']} — {chip}"
-    st.session_state.awaiting_clarify = None
-    st.session_state.pending = combined
+def _submit_compare(q: str):
+    """Re-ask the same question, forced into old-Act comparison mode."""
+    st.session_state.pending = q
+    st.session_state.force_compare = True
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1423,7 +1352,7 @@ if _demo_param():
 # ─────────────────────────────────────────────────────────────────────────────
 # Chat history
 # ─────────────────────────────────────────────────────────────────────────────
-for msg in st.session_state.messages:
+for _i, msg in enumerate(st.session_state.messages):
     if msg["role"] == "user":
         with st.chat_message("user", avatar="👤"):
             st.markdown(msg["content"])
@@ -1436,29 +1365,18 @@ for msg in st.session_state.messages:
                     _src_row_html(msg.get("sources", []), msg.get("no_provision", [])),
                     unsafe_allow_html=True,
                 )
-            render_answer(msg.get("data") or {"_raw": msg.get("content", "")})
+            _d = msg.get("data") or {"_raw": msg.get("content", "")}
+            render_answer(_d)
+            if (msg.get("query") and msg.get("sources")
+                    and isinstance(_d, dict) and _d.get("type") != "comparison"
+                    and "_raw" not in _d):
+                st.button("🔄  What changed from the old law?",
+                          key=f"chg_hist_{_i}",
+                          on_click=_submit_compare, args=(msg["query"],))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Clarification UI
-# ─────────────────────────────────────────────────────────────────────────────
-if st.session_state.awaiting_clarify:
-    ctx = st.session_state.awaiting_clarify
-    st.markdown(
-        f'<div class="lc-clarify-wrap">'
-        f'<div class="lc-clarify-q">🤔 {ctx["question"]}</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown('<div class="clarify-chip-row">', unsafe_allow_html=True)
-    cols = st.columns(len(ctx["chips"]))
-    for i, chip in enumerate(ctx["chips"]):
-        cols[i].button(chip, key=f"chip_{i}", on_click=_clarify_pick, args=(chip,))
-    st.markdown('</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<p class="lc-clarify-hint">Or type more details in the search bar above ↑</p>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
+# (Clarification UI removed — queries are answered directly)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1467,7 +1385,6 @@ if st.session_state.awaiting_clarify:
 if (
     not st.session_state.messages
     and not st.session_state.pending
-    and not st.session_state.awaiting_clarify
 ):
     st.markdown('<div class="lc-samples-wrap">', unsafe_allow_html=True)
     st.markdown('<div class="lc-samples-label">Try asking</div>', unsafe_allow_html=True)
@@ -1499,64 +1416,53 @@ if st.session_state.pending:
     with st.chat_message("user", avatar="👤"):
         st.markdown(raw_q)
 
-    # Check if clarification needed
-    is_clarification = " — " not in raw_q
-    clarify_data = None
-    if is_clarification and _has_key():
-        with st.spinner("Thinking…"):
-            clarify_data = detect_clarification(corrected_q)
+    force_compare = st.session_state.force_compare
+    st.session_state.force_compare = False
 
-    if clarify_data and st.session_state.awaiting_clarify is None:
-        st.session_state.awaiting_clarify = {
-            "question":   clarify_data["question"],
-            "chips":      clarify_data["chips"],
-            "original_q": corrected_q,
-        }
-        st.rerun()
-    else:
-        st.session_state.awaiting_clarify = None
+    with st.spinner("Searching the codes…"):
+        all_results = corpus.search_all(LOADED, corrected_q, k=8)
 
-        with st.spinner("Searching the codes…"):
-            all_results = corpus.search_all(LOADED, corrected_q, k=8)
+    sources      = [r["meta"]["short"] for r in all_results.values() if r["found"]]
+    no_provision = [r["meta"]["short"] for r in all_results.values() if not r["found"]]
+    user_msg     = build_prompt(corrected_q, all_results)
+    is_compare   = bool(sources) and (force_compare or _is_comparison(corrected_q))
 
-        sources      = [r["meta"]["short"] for r in all_results.values() if r["found"]]
-        no_provision = [r["meta"]["short"] for r in all_results.values() if not r["found"]]
-        user_msg     = build_prompt(corrected_q, all_results)
+    with st.chat_message("assistant", avatar="⚖️"):
+        if corrections:
+            st.markdown(_correction_html(corrections), unsafe_allow_html=True)
 
-        with st.chat_message("assistant", avatar="⚖️"):
-            if corrections:
-                st.markdown(_correction_html(corrections), unsafe_allow_html=True)
+        if sources or no_provision:
+            st.markdown(_src_row_html(sources, no_provision), unsafe_allow_html=True)
 
-            if sources or no_provision:
-                st.markdown(
-                    _src_row_html(sources, no_provision), unsafe_allow_html=True
-                )
+        if not sources:
+            names = " · ".join(e["meta"]["short"] for e in LOADED.values())
+            data  = {"_raw": (
+                f"No relevant provisions found across **{names}** for this query. "
+                "Try rephrasing or ask about a specific Section or topic."
+            )}
+        elif is_compare:
+            with st.spinner("Comparing the old Act with the new Code…"):
+                data = generate_comparison(build_comparison_prompt(corrected_q, all_results))
+            data = _verify_quotes(data)
+        else:
+            with st.spinner("Analysing the statute…"):
+                data = generate_answer([{"role": "user", "content": user_msg}])
+            data = _verify_quotes(data)
+        render_answer(data)
+        if sources and not is_compare and isinstance(data, dict) and "_raw" not in data:
+            st.button("🔄  What changed from the old law?",
+                      key=f"chg_live_{len(st.session_state.messages)}",
+                      on_click=_submit_compare, args=(corrected_q,))
 
-            if not sources:
-                names = " · ".join(e["meta"]["short"] for e in LOADED.values())
-                data  = {"_raw": (
-                    f"No relevant provisions found across **{names}** for this query. "
-                    "Try rephrasing or ask about a specific Section or topic."
-                )}
-            elif _is_comparison(corrected_q):
-                cmp_prompt = build_comparison_prompt(corrected_q, all_results)
-                with st.spinner("Comparing the old Act with the new Code…"):
-                    data = generate_comparison(cmp_prompt)
-                data = _verify_quotes(data, cmp_prompt)
-            else:
-                with st.spinner("Analysing the statute…"):
-                    data = generate_answer([{"role": "user", "content": user_msg}])
-                data = _verify_quotes(data, user_msg)
-            render_answer(data)
-
-        st.session_state.messages.append({
-            "role":         "assistant",
-            "data":         data,
-            "sources":      sources,
-            "no_provision": no_provision,
-            "corrections":  corrections,
-        })
-        st.rerun()
+    st.session_state.messages.append({
+        "role":         "assistant",
+        "data":         data,
+        "query":        corrected_q,
+        "sources":      sources,
+        "no_provision": no_provision,
+        "corrections":  corrections,
+    })
+    st.rerun()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
