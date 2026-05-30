@@ -1164,18 +1164,20 @@ def _render_authorities(auths, label: str):
     if any("verified" in a for a in auths):
         if nver == ntot:
             st.markdown(
-                f'<div class="lc-trust ok">✓ All {ntot} cited provision(s) verified '
-                f'verbatim against the source text</div>', unsafe_allow_html=True)
+                f'<div class="lc-trust ok">✓ The {ntot} quoted passage(s) below are shown '
+                f'verbatim from the Code — this confirms the wording, not the interpretation '
+                f'above. Read the text to check it.</div>', unsafe_allow_html=True)
         else:
             st.markdown(
-                f'<div class="lc-trust warn">⚠ {ntot - nver} of {ntot} citation(s) could not be '
-                f'matched to the source — treat those as unverified</div>', unsafe_allow_html=True)
+                f'<div class="lc-trust warn">⚠ {ntot - nver} of {ntot} quote(s) could not be '
+                f'matched to the Code text — treat those as unverified, and check the wording '
+                f'below.</div>', unsafe_allow_html=True)
     pills = "".join(
         f'<span class="lc-cite">{_esc(a.get("citation") or "Provision")}</span>' for a in auths)
     st.markdown(
         f'<div class="lc-cite-row"><span class="lc-src-label">Authority</span>{pills}</div>',
         unsafe_allow_html=True)
-    with st.expander(label):
+    with st.expander(label, expanded=True):
         for a in auths:
             v = a.get("verified")
             badge = ('<span class="lc-verified">✓ verbatim</span>' if v
@@ -1579,8 +1581,9 @@ if st.session_state.pending:
 
     with st.spinner("Searching the codes…"):
         extra_terms = analyze_query(raw_q)               # legal keywords; "" if offline/error
-        search_q    = (corrected_q + " " + extra_terms).strip()
-        all_results = corpus.search_all(LOADED, search_q, k=8)
+        # Route from the original query; the expansion only sharpens ranking and may add a
+        # missed code — it can never knock the relevant code below the routing gate.
+        all_results = corpus.search_all(LOADED, corrected_q, k=8, boost=extra_terms)
 
     sources      = [r["meta"]["short"] for r in all_results.values() if r["found"]]
     no_provision = [r["meta"]["short"] for r in all_results.values() if not r["found"]]

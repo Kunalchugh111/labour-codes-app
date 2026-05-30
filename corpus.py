@@ -227,8 +227,8 @@ def _score_chunk(ch: dict, terms: list[str], explicit: set[int], definitional: b
     return score
 
 
-def _score_list(chunks: list[dict], query: str):
-    terms = _terms(query)
+def _score_list(chunks: list[dict], query: str, boost: str = ""):
+    terms = _terms(query + (" " + boost if boost else ""))
     explicit = {int(n) for n in re.findall(r"(?:section|rule)\s+(\d{1,3})", query.lower())}
     definitional = bool(re.search(r"\b(defin|meaning|means|what is|who is)\b", query.lower()))
     scored = [(_score_chunk(ch, terms, explicit, definitional), ch) for ch in chunks]
@@ -236,19 +236,21 @@ def _score_list(chunks: list[dict], query: str):
     return scored, definitional
 
 
-def _scored(entry: dict, query: str):
-    return _score_list(entry["chunks"], query)
+def _scored(entry: dict, query: str, boost: str = ""):
+    return _score_list(entry["chunks"], query, boost)
 
 
 def _code_relevance(entry: dict, query: str) -> float:
     # sum of the top-3 chunk scores — a truly relevant code has several strong hits,
-    # a noise code has at most one mediocre one.
+    # a noise code has at most one mediocre one. Routing uses the ORIGINAL query only
+    # (no boost), so an LLM keyword expansion can never knock a relevant code out.
     scored, _ = _scored(entry, query)
     return sum(s for s, _ in scored[:3])
 
 
-def search(entry: dict, query: str, k: int = 8, min_score: float = _MIN_SCORE) -> list[dict]:
-    scored, definitional = _scored(entry, query)
+def search(entry: dict, query: str, k: int = 8, min_score: float = _MIN_SCORE,
+           boost: str = "") -> list[dict]:
+    scored, definitional = _scored(entry, query, boost)
     scored = [(s, c) for s, c in scored if s >= min_score]
     picks = scored[:k]
 
@@ -282,16 +284,25 @@ def search(entry: dict, query: str, k: int = 8, min_score: float = _MIN_SCORE) -
     return result[:k]
 
 
-def search_all(corpus_dict: dict, query: str, k: int = 8) -> dict:
-    # Route: only include codes whose best match clears the gate (best code always kept).
+def _kept_codes(corpus_dict: dict, query: str) -> set:
+    # Codes whose best match clears the gate (best code always kept).
     tops = {cid: _code_relevance(e, query) for cid, e in corpus_dict.items()}
     best = max(tops.values(), default=0.0)
     definitional = bool(re.search(r"\b(defin|meaning|means|what is|who is)\b", query.lower()))
     gate = max(best * (_GATE_REL_DEF if definitional else _GATE_REL), _GATE_ABS)
+    return {cid for cid in corpus_dict if tops[cid] >= gate or tops[cid] >= best}
+
+
+def search_all(corpus_dict: dict, query: str, k: int = 8, boost: str = "") -> dict:
+    # Route from the ORIGINAL query. An optional `boost` (e.g. LLM-expanded legal
+    # keywords) may ADD a code the original query missed — via the union below — but can
+    # never drop one, since routing on the bare query is always part of the kept set.
+    keep = _kept_codes(corpus_dict, query)
+    if boost:
+        keep |= _kept_codes(corpus_dict, (query + " " + boost).strip())
     out = {}
     for cid, entry in corpus_dict.items():
-        keep = tops[cid] >= gate or tops[cid] >= best
-        chunks = search(entry, query, k=k) if keep else []
+        chunks = search(entry, query, k=k, boost=boost) if cid in keep else []
         out[cid] = {"chunks": chunks, "found": bool(chunks), "meta": entry["meta"]}
     return out
 
