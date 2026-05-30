@@ -6,16 +6,18 @@ knowledge, and asks **which code** when a term (e.g. "wages") differs across cod
 End users open one link and type — no key, no setup for them.
 
 ## How it works
-1. **Clarify** (LLM) — asks one short "which code?"-style question only when the
-   query is ambiguous; otherwise answers straight away.
-2. **Retrieve** (local Python) — pulls only the relevant Sections/Rules from across the
-   four codes, so every question stays small and fast no matter how large the source is.
-3. **Answer** (LLM) — answers strictly from those slices, citing exact Sections/Rules.
+1. **Expand** (LLM) — rewrites your plain-English question or situation into the statute's own
+   legal terms, so the search finds the right provisions even when you don't use legal words.
+2. **Retrieve** (local Python) — pulls only the relevant Sections/Rules from across the four
+   codes, so every question stays small and fast no matter how large the source is.
+3. **Dissect & answer** (LLM) — breaks your situation into the distinct legal issues it raises,
+   grounds each issue in the governing Section/Rule, applies the law to your facts, then gives a
+   verdict and next steps — strictly from those slices, citing exact Sections/Rules.
 
-The model is **Amazon Nova Pro on AWS Bedrock**, called through the model-agnostic
-**Converse API** — so you can switch to any other Bedrock model by setting one secret
-(`BEDROCK_MODEL_ID`). Your Bedrock API key lives in Streamlit **Secrets** (server-side);
-end users never see or need it.
+The model is **Amazon Nova Pro on AWS Bedrock**, called through the model-agnostic **Converse
+API** — switch to any other Bedrock model with one secret (`BEDROCK_MODEL_ID`); a stronger model
+(e.g. a Claude model) sharpens the issue-by-issue reasoning. Your Bedrock API key lives in
+Streamlit **Secrets** (server-side); end users never see or need it.
 
 ## What's already done
 Three codes are processed and built in: **Code on Wages 2019**, **Industrial Relations
@@ -72,8 +74,8 @@ it's available — no code change needed.
 
 ## Preview the answer layout
 Append `?demo=1` to the app URL to see sample answers rendered in the current card layout
-(verdict card, requirements checklist, action box, citation pills, collapsible statutory text)
-— no Bedrock key needed. Handy for checking the look after a change.
+(restatement, verdict card, the issue-by-issue **Analysis**, action box, citation pills,
+collapsible statutory text) — no Bedrock key needed. Handy for checking the look after a change.
 
 ## Note
 Informational reference for HR. The cited provision in the Code or Rules is the

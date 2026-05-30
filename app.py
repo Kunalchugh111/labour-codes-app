@@ -438,6 +438,37 @@ section[data-testid="stBottom"] > div {
 .lc-verdict.non-compliant { background: var(--red-bg);   border-color: var(--red-b);   color: var(--red); }
 .lc-verdict.partial       { background: var(--amber-bg); border-color: var(--amber-b); color: var(--amber); }
 
+/* ══ RESTATEMENT + ANALYSIS (the dissection) ════════════════════════════════ */
+.lc-restate {
+  font-size: 13.5px; line-height: 1.6; color: var(--slate-3); font-style: italic;
+  margin-bottom: 16px; padding-left: 14px; border-left: 2px solid var(--line, #e2e8f0);
+  animation: fadeUp .3s var(--ease) both;
+}
+.lc-issue {
+  border: 1px solid var(--line, #e2e8f0); border-left-width: 3px; border-radius: 8px;
+  padding: 13px 16px; margin-bottom: 10px; background: var(--card, #fff);
+  animation: fadeUp .35s var(--ease) both;
+}
+.lc-issue-head {
+  display: flex; align-items: center; gap: 9px;
+  font-size: 14px; font-weight: 600; color: var(--ink, #0f172a); margin-bottom: 6px;
+}
+.lc-issue-chip {
+  flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: #fff;
+}
+.lc-issue-body { font-size: 13.5px; line-height: 1.65; color: var(--ink-2); }
+.lc-issue-cite { margin-top: 8px; font-size: 11px; font-weight: 600; color: var(--navy-3); }
+.lc-issue.ok        { border-left-color: var(--green); }
+.lc-issue.risk      { border-left-color: var(--amber); }
+.lc-issue.violation { border-left-color: var(--red); }
+.lc-issue.info      { border-left-color: var(--navy-3); }
+.lc-issue-chip.ok        { background: var(--green); }
+.lc-issue-chip.risk      { background: var(--amber); }
+.lc-issue-chip.violation { background: var(--red); }
+.lc-issue-chip.info      { background: var(--navy-3); }
+
 /* ══ ANSWER CARDS ═══════════════════════════════════════════════════════════ */
 .lc-block { margin-bottom: 16px; animation: fadeUp .35s var(--ease) both; }
 .lc-section-label {
@@ -801,11 +832,23 @@ def _model_id() -> str:
     except Exception:
         return MODEL_ID
 
+def _model_label() -> str:
+    """Friendly model name for the footer, derived from the effective model id."""
+    mid = _model_id().lower()
+    if "nova-pro" in mid:   return "Amazon Nova Pro"
+    if "nova" in mid:       return "Amazon Nova"
+    if "claude" in mid:     return "Anthropic Claude"
+    if "llama" in mid:      return "Meta Llama"
+    if "mistral" in mid:    return "Mistral"
+    return _model_id()
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # System prompt
 # ─────────────────────────────────────────────────────────────────────────────
-SYSTEM = """You are an expert Indian Labour Law compliance assistant for HR managers.
+SYSTEM = """You are an expert Indian Labour Law compliance assistant for HR managers. You think like
+a labour lawyer: you DISSECT the manager's situation into the distinct legal issues it raises, ground
+each issue in the governing Section/Rule, reason from the law to THEIR facts, and only then conclude.
 
 You receive statutory text from India's four Labour Codes and their Central Rules, plus the HR
 manager's question or situation.
@@ -819,30 +862,39 @@ Choose "type":
 JSON shape:
 {
   "type": "compliance" | "info",
-  "verdict": {"status": "compliant" | "non-compliant" | "partial", "summary": "one sentence"},
-  "answer": "2-4 plain-English sentences",
-  "requirements": ["plain-English point", ...],
+  "restatement": "one sentence restating the situation/question in your own words (shows you understood it)",
+  "verdict": {"status": "compliant" | "non-compliant" | "partial", "summary": "one-sentence bottom line"},
+  "analysis": [
+    {
+      "issue": "the specific legal question this situation raises (short)",
+      "finding": "2-4 sentences: what the governing provision requires AND how it applies to THESE facts",
+      "status": "ok" | "risk" | "violation" | "info",
+      "citation": "Section X / Rule Y — [Code Name]"
+    }
+  ],
   "actions": ["imperative step the manager must take now", ...],
-  "key_points": ["practical point with exact numbers/timelines", ...],
   "authorities": [{"citation": "Section X / Rule X — [Code Name]", "quote": "exact statutory text"}]
 }
 
 Field rules:
-- type "compliance": fill "verdict", "requirements" (3-5), and "actions" (only if NOT fully
-  compliant, else []). Set "answer" to "" and "key_points" to [].
-- type "info": fill "answer" and "key_points" (3-5). Set "verdict" to null, "requirements" to []
-  and "actions" to [].
-- "authorities": ALWAYS list the provisions you relied on; each "quote" is VERBATIM statutory text.
-  When a Central Rule prescribes the procedure, forms, timelines, registers or rates for a Section
-  you rely on, include that Rule in "authorities" as well as the Section — cite both.
+- ALWAYS fill "restatement" and "analysis". "analysis" is the heart of the answer: 1-4 issues, each
+  spotting one legal question, naming the governing provision, and APPLYING it to the manager's
+  facts (not a generic summary). Order issues from most to least important.
+- type "compliance": fill "verdict"; each issue "status" is "ok" / "risk" / "violation"; fill
+  "actions" with concrete next steps (only when NOT fully compliant, else []).
+- type "info": set "verdict" to null; each issue "status" is "info"; "actions" may list helpful next
+  steps or be [].
+- Every "analysis[].citation" MUST also appear in "authorities" with its VERBATIM quote. When a
+  Central Rule prescribes the procedure, forms, timelines, registers or rates for a Section you rely
+  on, cite and quote the Rule as well as the Section.
 
 ABSOLUTE RULES:
 - NEVER invent or paraphrase statutory text. "authorities[].quote" must be verbatim from the
   supplied excerpts only.
 - NEVER use outside legal knowledge not in the supplied text.
-- If no supplied excerpt is relevant, return "authorities": [] and say so plainly in the
-  "summary"/"answer".
-- Keep plain-English fields jargon-free, direct, and specific (numbers, days, thresholds).
+- If no supplied excerpt is relevant, return "analysis": [], "authorities": [] and say so plainly in
+  "restatement"/"verdict.summary".
+- Be specific in plain English (numbers, days, thresholds); explain reasoning, don't pad.
 - Output VALID JSON. Escape quotes and newlines inside strings. No text outside the JSON object."""
 
 
@@ -938,8 +990,11 @@ def _parse_answer(text: str) -> dict:
     return {"_raw": text or ""}
 
 
-def _converse_json(system: str, user_text: str) -> dict:
-    """Single non-streaming Converse call returning parsed JSON (or a raw-text fallback)."""
+def _converse_json(system: str, user_text: str,
+                   max_tokens: int = 8192, temperature: float = 0.25) -> dict:
+    """Single non-streaming Converse call returning parsed JSON (or a raw-text fallback).
+    Headroom (8192 tokens) lets the model reason through several issues without truncation;
+    a slightly warmer temperature (0.25) reads less robotic while staying accurate for law."""
     client = get_bedrock_client()
     if not client:
         return {"_raw": "⚠️ Bedrock client error. Check secrets."}
@@ -951,7 +1006,7 @@ def _converse_json(system: str, user_text: str) -> dict:
             modelId=_model_id(),
             system=[{"text": system}],
             messages=[{"role": "user", "content": [{"text": user_text}]}],
-            inferenceConfig={"maxTokens": 4096, "temperature": 0.1},
+            inferenceConfig={"maxTokens": max_tokens, "temperature": temperature},
         )
         return _parse_answer(resp["output"]["message"]["content"][0]["text"])
     except Exception as e:
@@ -966,6 +1021,43 @@ def generate_answer(messages: list[dict]) -> dict:
 def generate_comparison(user_text: str) -> dict:
     """Old-Act vs new-Code 'what changed' comparison."""
     return _converse_json(COMPARISON_SYSTEM, user_text)
+
+
+QUERY_REWRITE_SYSTEM = """You turn an HR manager's question or situation into a compact set of SEARCH
+KEYWORDS for looking up Indian labour-law provisions. Expand plain-English wording into the statute's
+own terms and close synonyms — e.g. "fire / let go / sack" -> "termination dismissal retrenchment
+discharge", "time off for a baby" -> "maternity benefit leave", "PF" -> "provident fund".
+Output ONLY keywords and short phrases, space-separated, lowercase, no punctuation, no explanation."""
+
+_query_terms_cache: dict = {}
+
+def analyze_query(raw_q: str) -> str:
+    """Expand a plain-English question into legal search keywords, ADDED to the retrieval query so
+    paraphrased questions still hit the right Sections. Fail-safe: returns "" on any error or when
+    no key is configured, so retrieval falls back to exactly today's behaviour."""
+    q = (raw_q or "").strip()
+    if not q or not _has_key():
+        return ""
+    if q in _query_terms_cache:
+        return _query_terms_cache[q]
+    client = get_bedrock_client()
+    if not client:
+        return ""
+    try:
+        resp = client.converse(
+            modelId=_model_id(),
+            system=[{"text": QUERY_REWRITE_SYSTEM}],
+            messages=[{"role": "user", "content": [{"text": q}]}],
+            inferenceConfig={"maxTokens": 120, "temperature": 0.0},
+        )
+        out = resp["output"]["message"]["content"][0]["text"]
+        out = re.sub(r"[^a-z0-9\s/-]", " ", out.lower())   # keep a clean keyword line only
+        out = re.sub(r"\s+", " ", out).strip()[:200]
+        if out:
+            _query_terms_cache[q] = out
+        return out
+    except Exception:
+        return ""
 
 
 _COMPARE_RE = re.compile(
@@ -1129,6 +1221,32 @@ def render_comparison(data: dict):
     st.markdown(f'<div class="lc-disclaimer">{DISCLAIMER}</div>', unsafe_allow_html=True)
 
 
+_ISSUE_STATUS = {
+    "ok":        ("✓", "ok"),
+    "risk":      ("⚠", "risk"),
+    "violation": ("✕", "violation"),
+    "info":      ("›", "info"),
+}
+
+def _render_analysis(analysis: list):
+    """Render the dissection: one card per legal issue — status chip, the issue, the reasoning
+    (law applied to the manager's facts), and the governing provision."""
+    st.markdown('<div class="lc-section-label">Analysis</div>', unsafe_allow_html=True)
+    for a in analysis:
+        icon, cls = _ISSUE_STATUS.get(str(a.get("status", "info")).lower(), _ISSUE_STATUS["info"])
+        issue   = _esc(str(a.get("issue", "")).strip() or "Issue")
+        finding = _esc(str(a.get("finding", "")).strip())
+        cite    = str(a.get("citation", "")).strip()
+        cite_html = f'<div class="lc-issue-cite">{_esc(cite)}</div>' if cite else ""
+        st.markdown(
+            f'<div class="lc-issue {cls}">'
+            f'<div class="lc-issue-head"><span class="lc-issue-chip {cls}">{icon}</span>{issue}</div>'
+            f'<div class="lc-issue-body">{finding}</div>'
+            f'{cite_html}</div>',
+            unsafe_allow_html=True,
+        )
+
+
 def render_answer(data: dict):
     """Render a structured answer as scannable cards (verdict / points / actions /
     collapsible authorities). Falls back to markdown for unstructured replies."""
@@ -1143,8 +1261,15 @@ def render_answer(data: dict):
     is_comp = data.get("type") == "compliance"
     verdict = data.get("verdict") or {}
 
-    # 1 — Verdict card (compliance) or lead paragraph (info)
-    status = (verdict.get("status") or "").strip()
+    # 0 — Restatement (shows the situation was understood)
+    restate = str(data.get("restatement", "")).strip()
+    if restate:
+        st.markdown(f'<div class="lc-restate">{_esc(restate)}</div>', unsafe_allow_html=True)
+
+    # 1 — Verdict card (compliance) or lead paragraph (info, only when there's no analysis)
+    status   = (verdict.get("status") or "").strip()
+    analysis = [a for a in (data.get("analysis") or []) if isinstance(a, dict)
+                and (str(a.get("issue", "")).strip() or str(a.get("finding", "")).strip())]
     if is_comp and status in _VERDICT:
         icon, label = _VERDICT[status]
         st.markdown(
@@ -1156,20 +1281,24 @@ def render_answer(data: dict):
             f'</div></div>',
             unsafe_allow_html=True,
         )
-    elif str(data.get("answer", "")).strip():
+    elif not analysis and str(data.get("answer", "")).strip():
         st.markdown(f'<div class="lc-lead">{_esc(data["answer"])}</div>',
                     unsafe_allow_html=True)
 
-    # 2 — Requirements / key points checklist
-    points = (data.get("requirements") if is_comp else data.get("key_points")) or []
-    points = [p for p in points if str(p).strip()]
-    if points:
-        label = "What the law requires" if is_comp else "Key points"
-        st.markdown(
-            f'<div class="lc-block"><div class="lc-section-label">{label}</div>'
-            f'<ul class="lc-req">{_bullets(points)}</ul></div>',
-            unsafe_allow_html=True,
-        )
+    # 2 — Analysis: the dissection (issue → governing provision → application → per-issue status)
+    if analysis:
+        _render_analysis(analysis)
+    else:
+        # Backward-compat: older replies (and history) use requirements / key_points bullets
+        points = (data.get("requirements") if is_comp else data.get("key_points")) or []
+        points = [p for p in points if str(p).strip()]
+        if points:
+            label = "What the law requires" if is_comp else "Key points"
+            st.markdown(
+                f'<div class="lc-block"><div class="lc-section-label">{label}</div>'
+                f'<ul class="lc-req">{_bullets(points)}</ul></div>',
+                unsafe_allow_html=True,
+            )
 
     # 3 — Action box (compliance, only when there are actions)
     actions = [a for a in (data.get("actions") or []) if str(a).strip()]
@@ -1270,6 +1399,35 @@ def _demo_param():
 
 if _demo_param():
     _demo_samples = [
+        {
+            "type": "compliance",
+            "restatement": "You let a worker with 3 years' service go for repeated late-coming, giving two days' notice and no compensation.",
+            "verdict": {"status": "non-compliant",
+                        "summary": "This is a retrenchment that skips the mandatory notice and compensation, so it is non-compliant."},
+            "analysis": [
+                {"issue": "Does ending this worker's service count as 'retrenchment'?",
+                 "finding": "The worker has over one year of continuous service and is not being dismissed as punishment after an inquiry, so the exit is a retrenchment and the Section 70 safeguards apply in full.",
+                 "status": "info",
+                 "citation": "Section 70 — Industrial Relations Code, 2020"},
+                {"issue": "Was the notice period valid?",
+                 "finding": "Section 70 requires one month's written notice stating reasons, or wages in lieu. Two days' notice falls about 28 days short, so you must pay wages in lieu for the shortfall.",
+                 "status": "violation",
+                 "citation": "Section 70 — Industrial Relations Code, 2020"},
+                {"issue": "Is retrenchment compensation owed?",
+                 "finding": "Compensation of 15 days' average pay for every completed year is mandatory. For 3 completed years that is roughly 45 days' pay, which has not been paid.",
+                 "status": "violation",
+                 "citation": "Section 70 — Industrial Relations Code, 2020"},
+            ],
+            "actions": [
+                "Pay wages in lieu for the ~28-day notice shortfall.",
+                "Pay retrenchment compensation of 15 days' average pay × 3 completed years.",
+                "File the prescribed notice of retrenchment with the appropriate Government.",
+            ],
+            "authorities": [
+                {"citation": "Section 70 — Industrial Relations Code, 2020", "verified": True,
+                 "quote": "No workman employed in any industrial establishment who has been in continuous service for not less than one year under an employer shall be retrenched until the workman has been given one month's notice in writing indicating the reasons for retrenchment and the period of notice has expired, or the workman has been paid in lieu of such notice, wages for the period of the notice."},
+            ],
+        },
         {
             "type": "comparison",
             "headline": "The threshold for needing Government permission to retrench rose from 100 to 300 workers.",
@@ -1420,11 +1578,13 @@ if st.session_state.pending:
     st.session_state.force_compare = False
 
     with st.spinner("Searching the codes…"):
-        all_results = corpus.search_all(LOADED, corrected_q, k=8)
+        extra_terms = analyze_query(raw_q)               # legal keywords; "" if offline/error
+        search_q    = (corrected_q + " " + extra_terms).strip()
+        all_results = corpus.search_all(LOADED, search_q, k=8)
 
     sources      = [r["meta"]["short"] for r in all_results.values() if r["found"]]
     no_provision = [r["meta"]["short"] for r in all_results.values() if not r["found"]]
-    user_msg     = build_prompt(corrected_q, all_results)
+    user_msg     = build_prompt(raw_q, all_results)      # the model dissects the manager's real words
     is_compare   = bool(sources) and (force_compare or _is_comparison(corrected_q))
 
     with st.chat_message("assistant", avatar="⚖️"):
@@ -1471,7 +1631,7 @@ if st.session_state.pending:
 st.markdown(
     '<div class="lc-footer">'
     '<strong>HR Compliance Reference</strong>'
-    ' &nbsp;·&nbsp; Amazon Nova Pro via AWS Bedrock'
+    f' &nbsp;·&nbsp; {_model_label()} via AWS Bedrock'
     ' &nbsp;·&nbsp; Always consult a qualified legal advisor'
     '</div>',
     unsafe_allow_html=True,
