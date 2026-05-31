@@ -1521,6 +1521,9 @@ if _demo_param():
     st.markdown('<div class="lc-correction">🔍 Demo preview — sample answers (not live).</div>',
                 unsafe_allow_html=True)
     for _d in _demo_samples:
+        for _a in _d.get("authorities", []):       # show the new titles + verbatim badges in the no-key demo
+            _a.setdefault("title", corpus.lookup_title(LOADED, _a.get("citation", "")))
+            _a.setdefault("verified", True)
         with st.chat_message("assistant", avatar="⚖️"):
             _srcs = [a["citation"].split("—")[-1].strip() for a in _d["authorities"]]
             st.markdown(_src_row_html(_srcs, []), unsafe_allow_html=True)
