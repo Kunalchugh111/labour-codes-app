@@ -1555,9 +1555,12 @@ if _demo_param():
         },
         {
             "type": "compliance",
+            "_demo_topic": "retrench",
             "verdict": {"status": "non-compliant",
                         "summary": "One month's written notice (or wages in lieu) is required "
                                    "before retrenchment; two days is not enough."},
+            "_applicability": intake.applicability(
+                "retrench", {"size": "in an establishment employing 50 to 299 workers"}),
             "requirements": [
                 "At least one month's written notice, or wages in lieu of the notice period.",
                 "The notice must state the reasons for retrenchment.",
@@ -1600,7 +1603,7 @@ if _demo_param():
     ]
     st.markdown('<div class="lc-correction">🔍 Demo preview — sample answers (not live).</div>',
                 unsafe_allow_html=True)
-    for _d in _demo_samples:
+    for _i, _d in enumerate(_demo_samples):
         for _a in _d.get("authorities", []):       # show the new titles + verbatim badges in the no-key demo
             _a.setdefault("title", corpus.lookup_title(LOADED, _a.get("citation", "")))
             _a.setdefault("verified", True)
@@ -1608,6 +1611,8 @@ if _demo_param():
             _srcs = [a["citation"].split("—")[-1].strip() for a in _d["authorities"]]
             st.markdown(_src_row_html(_srcs, []), unsafe_allow_html=True)
             render_answer(_d)
+            if _d.get("_demo_topic"):               # showcase the related-provision chips too
+                _render_followups(None, intake.cross_refs(_d["_demo_topic"]), False, f"demo_{_i}")
     st.stop()
 
 
