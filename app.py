@@ -352,7 +352,11 @@ section[data-testid="stBottom"] > div {
   letter-spacing: .22em;
   text-transform: uppercase;
   color: var(--slate-3);
-  margin-bottom: 1rem;
+  margin-bottom: .5rem;
+}
+.lc-samples-hint {
+  font-family: 'DM Sans', sans-serif; font-size: 12.5px; line-height: 1.5;
+  color: var(--slate-3); margin: 0 0 1rem; max-width: 60ch;
 }
 
 /* Sample buttons */
@@ -533,6 +537,8 @@ ul.lc-action-list li:last-child, ul.lc-req li:last-child { margin-bottom: 0; }
   color: var(--navy); margin: 12px 0 5px;
 }
 .lc-auth-cite:first-child { margin-top: 2px; }
+.lc-auth-title { font-family: 'DM Sans', sans-serif; font-weight: 600; font-style: italic;
+  color: var(--ink-soft, #5b6472); }
 blockquote.lc-auth-quote {
   border-left: 3px solid var(--gold); background: var(--gold-pale);
   border-radius: 0 8px 8px 0; margin: 0 0 6px; padding: 10px 14px;
@@ -887,6 +893,9 @@ Field rules:
 - Every "analysis[].citation" MUST also appear in "authorities" with its VERBATIM quote. When a
   Central Rule prescribes the procedure, forms, timelines, registers or rates for a Section you rely
   on, cite and quote the Rule as well as the Section.
+- Each supplied excerpt is headed with its provision title (e.g. "Section 9 — Power to fix floor
+  wage"). Refer to provisions by that title in your finding so it reads naturally, but keep
+  "citation" in the exact "Section X / Rule Y — [Code Name]" form.
 
 ABSOLUTE RULES:
 - NEVER invent or paraphrase statutory text. "authorities[].quote" must be verbatim from the
@@ -894,6 +903,8 @@ ABSOLUTE RULES:
 - NEVER use outside legal knowledge not in the supplied text.
 - If no supplied excerpt is relevant, return "analysis": [], "authorities": [] and say so plainly in
   "restatement"/"verdict.summary".
+- If the supplied text answers only PART of the question, answer that part fully and state plainly
+  what the supplied provisions do NOT cover — never close the gap with outside knowledge or a guess.
 - Be specific in plain English (numbers, days, thresholds); explain reasoning, don't pad.
 - Output VALID JSON. Escape quotes and newlines inside strings. No text outside the JSON object."""
 
@@ -926,6 +937,8 @@ RULES:
   CURRENT-law text. Never swap them.
 - If the previous law had no equivalent provision, set "old" to "No equivalent provision" and
   "old_cite" to "".
+- Report only changes the supplied texts actually show; never manufacture a difference. If the two
+  texts say the same thing on a point, omit it rather than inventing a change.
 - authorities[].quote is VERBATIM from the supplied text only — never invent or paraphrase statute.
 - Rely only on the supplied excerpts; use outside knowledge for nothing.
 - Output VALID JSON. Escape quotes and newlines. No text outside the JSON object."""
@@ -1082,7 +1095,9 @@ def _verify_quotes(data: dict) -> dict:
     for a in auths:
         if not isinstance(a, dict):
             continue
-        src = corpus.lookup_citation(LOADED, str(a.get("citation", "")))
+        cit = str(a.get("citation", ""))
+        a["title"] = corpus.lookup_title(LOADED, cit)   # marginal title, e.g. "Floor wage"
+        src = corpus.lookup_citation(LOADED, cit)
         if src:
             a["verified"] = True
             a["source_text"] = src            # display the real provision text
@@ -1184,8 +1199,12 @@ def _render_authorities(auths, label: str):
                      else '<span class="lc-unverified">⚠ unverified</span>' if v is False else '')
             cls = " unverified" if v is False else ""
             text = corpus._trim(a.get("source_text") or a.get("quote", ""))
+            ttl = a.get("title")
+            cite_html = _esc(a.get("citation") or "Provision")
+            if ttl:
+                cite_html += f' <span class="lc-auth-title">— {_esc(ttl)}</span>'
             st.markdown(
-                f'<div class="lc-auth-cite">{_esc(a.get("citation") or "Provision")} {badge}</div>'
+                f'<div class="lc-auth-cite">{cite_html} {badge}</div>'
                 f'<blockquote class="lc-auth-quote{cls}">{_esc_ml(text)}</blockquote>',
                 unsafe_allow_html=True)
 
@@ -1548,13 +1567,19 @@ if (
 ):
     st.markdown('<div class="lc-samples-wrap">', unsafe_allow_html=True)
     st.markdown('<div class="lc-samples-label">Try asking</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="lc-samples-hint">Tip: include the specifics — years of service, notice '
+        'given, number of workers, establishment type — and you\'ll get a precise, cited verdict.</div>',
+        unsafe_allow_html=True)
+    # Spread across the app's modes: a compliance verdict, a threshold scenario, a definition,
+    # a calculation, an old-vs-new comparison, and a records/procedure question.
     samples = [
-        "I retrenched an employee with 2 days notice — was that correct?",
-        "What are the conditions and procedure for retrenchment?",
+        "I retrenched an employee with 3 years' service on 2 days' notice — was that correct?",
+        "We employ 120 workers and want to close a unit — what's the lawful process?",
         "How is 'wages' defined across the four Codes?",
-        "Can I terminate an employee during probation without notice?",
         "When is gratuity payable and how is it calculated?",
-        "What notice period is required before a lawful strike?",
+        "What changed for retrenchment from the old Industrial Disputes Act?",
+        "What registers and returns must an establishment maintain?",
     ]
     c1, c2 = st.columns(2)
     for i, s in enumerate(samples):

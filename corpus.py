@@ -50,6 +50,31 @@ SYNONYMS: dict[str, list[str]] = {
     "apprentice":      ["apprenticeship", "trainee", "training"],
     "hazardous":       ["dangerous", "safety", "health risk"],
     "penalty":         ["fine", "punishment", "offence", "contravention"],
+    "minimum":         ["minimum wage", "minimum rate of wages", "floor wage", "fixation"],
+    "floor":           ["floor wage", "minimum wage", "national floor wage"],
+    "deduction":       ["deductions", "deduct", "recovery", "fines"],
+    "overtime":        ["over time", "overtime wages", "extra hours", "working hours"],
+    "inspector":       ["inspector-cum-facilitator", "facilitator", "inspection"],
+    "facilitator":     ["inspector-cum-facilitator", "inspector", "inspection"],
+    "register":        ["registers", "records", "muster roll", "wage register", "returns"],
+    "return":          ["returns", "annual return", "filing"],
+    "fixed":           ["fixed term", "fixed-term", "fixed term employment", "ftc"],
+    "appointment":     ["letter of appointment", "appointment letter", "offer letter"],
+    "gig":             ["gig worker", "platform worker", "aggregator"],
+    "platform":        ["platform worker", "gig worker", "aggregator"],
+    "unorganised":     ["unorganized", "unorganised worker", "informal sector"],
+    "pension":         ["superannuation", "epfo", "provident fund"],
+    "child":           ["child labour", "adolescent", "young person", "minor"],
+    "women":           ["woman", "female", "night shift", "creche"],
+    "equal":           ["equal remuneration", "equal pay", "discrimination", "gender"],
+    "discrimination":  ["discriminate", "gender", "equal remuneration"],
+    "accident":        ["accidents", "dangerous occurrence", "injury"],
+    "canteen":         ["canteens", "welfare facility"],
+    "creche":          ["crèche", "creches", "child care", "women"],
+    "holiday":         ["holidays", "national holiday", "weekly off", "rest day"],
+    "closure":         ["close down", "shutting down", "winding up", "lockout"],
+    "registration":    ["register", "registered", "license", "licence"],
+    "safety":          ["occupational safety", "health and safety", "osh", "hazardous"],
 }
 
 LEGAL_VOCABULARY = [
@@ -144,7 +169,26 @@ def _preview(s, n=150):
     return s[:n]
 
 
-def parse_doc(text, kind):
+def _clean_title(t: str) -> str:
+    return re.sub(r"\s+", " ", t).strip().strip(".,;:-").strip()
+
+
+def _extract_title(seg: str, kind: str):
+    """Pull a provision's marginal title from its own text. Rules read 'N. Title.-'; old
+    Acts read 'N. Title <newline/(1)> body'. Returns None when there's no clean heading
+    (e.g. the 2020 Codes, whose titles come from the precomputed section_titles map)."""
+    head = re.sub(r"^\s*\d{1,3}[A-Z]{0,2}\.\s*", "", seg[:240], count=1).lstrip()
+    if kind == "rules":
+        m = re.match(r"([A-Z][^\n]{2,140}?)\.\s*-", head)
+        return _clean_title(m.group(1)) if m else None
+    m = re.match(r"([A-Z][A-Za-z][^\n]{2,108}?)\s*(?:\.\s*-|\n|\(1\)|$)", head)
+    if not m:
+        return None
+    cand = _clean_title(m.group(1))
+    return cand if 2 < len(cand) <= 90 else None
+
+
+def parse_doc(text, kind, titles=None):
     label = "Section" if kind == "code" else "Rule"
     sched_match = re.search(r"THE\s+[A-Z]+\s+SCHEDULE", text)
     body = text[: sched_match.start()] if sched_match else text
@@ -157,10 +201,15 @@ def parse_doc(text, kind):
         # standalone "FORM-<id>" heading (real long rules have no such heading inside).
         if len(re.findall(r"\S+", seg)) > 4000:
             seg = _FORMS_TAIL.split(seg, 1)[0].strip()
-        chunks.append({"label": f"{label} {lbl}", "num": int(re.match(r"\d+", lbl).group()),
+        num = int(re.match(r"\d+", lbl).group())
+        # 2020 Codes pass a precomputed margin-title map (inline would grab body prose);
+        # Rules / old-Acts carry a real inline heading, so extract it from the text.
+        title = titles.get(str(num)) if titles is not None else _extract_title(seg, kind)
+        chunks.append({"label": f"{label} {lbl}", "num": num, "title": title,
                        "text": seg, "preview": _preview(seg)})
     for title, seg in _schedules(tail):
-        chunks.append({"label": title, "num": None, "text": seg, "preview": _preview(seg)})
+        chunks.append({"label": title, "num": None, "title": None,
+                       "text": seg, "preview": _preview(seg)})
     return chunks
 
 
@@ -169,8 +218,17 @@ def _read(name):
     return p.read_text(encoding="utf-8") if p.exists() else None
 
 
+def _section_titles():
+    p = PROCESSED / "section_titles.json"
+    try:
+        return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+    except Exception:
+        return {}
+
+
 def load_corpus():
     cfg = json.loads((ROOT / "corpus_config.json").read_text())
+    all_titles = _section_titles()
     corpus: dict = {}
     for c in cfg["codes"]:
         statute = _read(c["statute_file"])
@@ -179,7 +237,7 @@ def load_corpus():
             continue
         entry: dict = {"meta": c, "chunks": []}
         if statute:
-            for ch in parse_doc(statute, "code"):
+            for ch in parse_doc(statute, "code", titles=all_titles.get(c["statute_file"], {})):
                 ch["source"] = c["title"]
                 entry["chunks"].append(ch)
         if rules:
@@ -237,6 +295,7 @@ def _wlen(ch: dict) -> int:
 def _score_chunk(ch: dict, terms: list[str], explicit: set[int], definitional: bool) -> float:
     low = ch["text"].lower()
     prev = ch["preview"].lower()
+    title = (ch.get("title") or "").lower()
     raw = 0.0
     for t in terms:
         c = low.count(t)
@@ -244,6 +303,8 @@ def _score_chunk(ch: dict, terms: list[str], explicit: set[int], definitional: b
             raw += min(c, 3)          # saturate repeated terms
             if t in prev:
                 raw += 1.5            # reward early / heading mentions
+        if title and t in title:
+            raw += 2.5                # a hit in the provision's title is a strong topical signal
     # length-normalise so long definition/admin chunks don't dominate everything
     score = raw / (1.0 + math.log(1.0 + _wlen(ch)))
     if ch["num"] == 2 and ch["label"].startswith("Section") and not definitional:
@@ -397,7 +458,7 @@ def _index(corpus_dict: dict):
     key = id(corpus_dict)
     if key in _INDEX_CACHE:
         return _INDEX_CACHE[key]
-    provisions, resolvers = {}, []
+    provisions, resolvers, titles = {}, [], {}
 
     def add(k, name, chunks):
         resolvers.append((k, _name_tokens(name)))
@@ -405,20 +466,21 @@ def _index(corpus_dict: dict):
             if ch.get("num") is not None:
                 kind = "rule" if ch["label"].lower().startswith("rule") else "section"
                 provisions.setdefault((k, kind, ch["num"]), ch["text"])
+                if ch.get("title"):
+                    titles.setdefault((k, kind, ch["num"]), ch["title"])
 
     for cid, e in corpus_dict.items():
         m = e["meta"]
         add(cid, f'{m["title"]} {m["short"]}', e["chunks"])
         for oa in e.get("old_acts", []):
             add("old:" + oa["meta"]["slug"], oa["meta"]["title"], oa["chunks"])
-    _INDEX_CACHE[key] = (provisions, resolvers)
-    return provisions, resolvers
+    _INDEX_CACHE[key] = (provisions, resolvers, titles)
+    return provisions, resolvers, titles
 
 
-def lookup_citation(corpus_dict: dict, citation: str):
-    """Return the actual statutory text for a citation like 'Section 62 — The Code on Social
-    Security, 2020' / 'Rule 50 — Industrial Relations Code' / 'Section 25 — Industrial Disputes
-    Act, 1947'. None if it can't be resolved. ('25N' resolves to §25.)"""
+def _resolve(corpus_dict: dict, citation: str):
+    """Resolve a citation like 'Section 62 — The Code on Social Security, 2020' /
+    'Rule 50 — Industrial Relations Code' to an index key (best, kind, num). ('25N'->§25.)"""
     if not citation:
         return None
     m = re.search(r"\b(section|rule|regulation)\s+(\d{1,3})", citation.lower())
@@ -428,15 +490,25 @@ def lookup_citation(corpus_dict: dict, citation: str):
     num = int(m.group(2))
     name = re.split(r"[—–-]", citation, 1)
     qt = _name_tokens(name[1] if len(name) > 1 else citation)
-    provisions, resolvers = _index(corpus_dict)
+    _, resolvers, _ = _index(corpus_dict)
     best, score = None, 0
     for k, toks in resolvers:
         s = len(qt & toks)
         if s > score:
             best, score = k, s
-    if best is None or score < 1:
-        return None
-    return provisions.get((best, kind, num))
+    return (best, kind, num) if best is not None and score >= 1 else None
+
+
+def lookup_citation(corpus_dict: dict, citation: str):
+    """The actual statutory text for a citation, or None if it can't be resolved."""
+    r = _resolve(corpus_dict, citation)
+    return _index(corpus_dict)[0].get(r) if r else None
+
+
+def lookup_title(corpus_dict: dict, citation: str):
+    """The provision's marginal title for a citation (e.g. 'Floor wage'), or None."""
+    r = _resolve(corpus_dict, citation)
+    return _index(corpus_dict)[2].get(r) if r else None
 
 
 _MAX_CHUNK_CHARS = 3000
@@ -450,10 +522,13 @@ def _trim(text: str) -> str:
     return (cut[:last_stop + 1] if last_stop > _MAX_CHUNK_CHARS // 2 else cut) + " [...]"
 
 
+def _hdr(c: dict) -> str:
+    t = c.get("title")
+    return f"{c['source']} — {c['label']}" + (f": {t}" if t else "")
+
+
 def render_chunks(picks: list[dict]) -> str:
-    return "\n\n".join(
-        f"===== {c['source']} — {c['label']} =====\n{_trim(c['text'])}" for c in picks
-    )
+    return "\n\n".join(f"===== {_hdr(c)} =====\n{_trim(c['text'])}" for c in picks)
 
 
 def render_all_results(all_results: dict) -> str:
@@ -467,4 +542,5 @@ def render_all_results(all_results: dict) -> str:
 
 
 def toc_line(c: dict) -> str:
-    return f"{c['label']}: {c['preview']}"
+    t = c.get("title")
+    return f"{c['label']}" + (f" — {t}" if t else "") + f": {c['preview']}"
