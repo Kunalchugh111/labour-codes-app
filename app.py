@@ -1152,6 +1152,16 @@ def _is_prospective(q: str) -> bool:
     not-yet-taken action is framed as guidance, not stamped 'non-compliant'."""
     return bool(_PROSPECTIVE_RE.search(q or "") and not _PAST_ACT_RE.search(q or ""))
 
+# Chapter X (special provisions) of the IR Code binds only from 300 workers. Below that its
+# prior-permission Sections must not even reach the model: a binding note + explicit naming still
+# didn't stop the model citing §79 at 120 workers, so we drop them from the compliance grounding.
+_CHAPTER_X_EXCL = {"retrench": {77, 79}, "closure": {77, 80}}
+
+def _excluded_ir_sections(topic: str, got: dict) -> set:
+    size = (got or {}).get("size", "")
+    sub300 = ("fewer than 50" in size) or ("50 to 299" in size)
+    return _CHAPTER_X_EXCL.get(topic, set()) if sub300 else set()
+
 def build_prompt(query: str, all_results: dict, applicability=None) -> str:
     grounding = corpus.render_all_results(all_results)
     no_prov   = [r["meta"]["short"] for r in all_results.values() if not r["found"]]
@@ -1164,10 +1174,15 @@ def build_prompt(query: str, all_results: dict, applicability=None) -> str:
     if applicability:
         # The establishment-size / length-of-service gating decides WHICH provisions apply
         # (e.g. prior-permission Chapter X duties only from 300 workers). Give it to the model
-        # as authoritative so the verdict can't over-apply a provision the facts rule out.
+        # as binding so the verdict can't over-apply a provision the facts rule out — the
+        # notes name the excluded Sections explicitly because a descriptive note alone wasn't
+        # enough to stop the model citing §79 below 300 workers.
         parts.append(
-            "=== APPLICABLE THRESHOLDS (authoritative — your verdict MUST respect these) ===\n"
-            "Determined from the manager's facts. Do not apply a provision these rule out.\n"
+            "=== APPLICABLE THRESHOLDS (binding — your verdict MUST obey these) ===\n"
+            "Determined from the manager's facts; they decide which provisions apply. Apply ONLY "
+            "provisions consistent with them. If a threshold says a Section or prior Government "
+            "permission does NOT apply at this size, you MUST NOT cite it, call its absence a "
+            "violation, or list it as a required action.\n"
             + "\n".join(f"• {n}" for n in applicability))
     if _is_prospective(query):
         parts.append(
@@ -1772,7 +1787,16 @@ if st.session_state.pending:
     if _got is None:
         _got = intake.facts_from_query(corrected_q)
     _notes = intake.applicability(_topic, _got or {}) if _topic else []
-    user_msg     = build_prompt(raw_q, all_results, applicability=_notes)
+    # Below 300 workers, keep Chapter X prior-permission Sections out of the grounding entirely
+    # (filter a shallow copy so display/routing and the quote-verifier still see the full corpus;
+    # comparison keeps them — it is about what changed).
+    _excl = _excluded_ir_sections(_topic, _got or {})
+    _ir   = all_results.get("ir")
+    _rfp  = all_results
+    if _excl and _ir and _ir.get("found"):
+        _rfp = {**all_results,
+                "ir": {**_ir, "chunks": [c for c in _ir["chunks"] if c.get("num") not in _excl]}}
+    user_msg     = build_prompt(raw_q, _rfp, applicability=_notes)
     is_compare   = bool(sources) and (force_compare or _is_comparison(corrected_q))
 
     with st.chat_message("assistant", avatar="⚖️"):

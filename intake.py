@@ -143,13 +143,15 @@ def applicability(topic_name: str, got: dict):
                          "Government is a *condition precedent* to lay-off, retrenchment or closure "
                          "(IR Code §77, §79).")
         elif "50 to 299" in size:
-            notes.append("**50–299 workers** — retrenchment notice + compensation (§70) and lay-off "
-                         "compensation (§§67–69) apply; prior Government permission is **not** required "
-                         "(that begins at 300 workers, §77).")
+            notes.append("**50–299 workers** — only the general safeguards apply: §70 retrenchment "
+                         "notice + compensation and §§67–69 lay-off compensation. The Chapter X "
+                         "prior-Government-permission duties (§77, §79) do **not** apply here — they "
+                         "begin at 300 workers.")
         elif "fewer than 50" in size:
             notes.append("**Under 50 workers** — lay-off compensation (§§67–69) does **not** apply "
-                         "(IR Code §65); retrenchment notice and compensation under §70 still apply "
-                         "where the worker has a year or more of continuous service.")
+                         "(IR Code §65); §70 retrenchment notice + compensation still apply where the "
+                         "worker has a year or more of continuous service. The Chapter X permission "
+                         "duties (§77, §79) do **not** apply.")
     if topic_name == "retrench":
         if "under one year" in tenure:
             notes.append("**Under 1 year of service** — the §70 retrenchment safeguards (one month's "
