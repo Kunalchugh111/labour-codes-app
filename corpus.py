@@ -480,11 +480,16 @@ def _index(corpus_dict: dict):
 
 def _resolve(corpus_dict: dict, citation: str):
     """Resolve a citation like 'Section 62 — The Code on Social Security, 2020' /
-    'Rule 50 — Industrial Relations Code' to an index key (best, kind, num). ('25N'->§25.)"""
+    'Rule 50 — Industrial Relations Code' to an index key (best, kind, num).
+    A lettered section (e.g. '25G', '25FF' in the repealed Acts) resolves to None: our index
+    keys sections by integer, so we can't show that exact provision verbatim — and collapsing
+    '25G'->§25 used to display the WRONG provision while still passing the 'verified' badge."""
     if not citation:
         return None
-    m = re.search(r"\b(section|rule|regulation)\s+(\d{1,3})", citation.lower())
+    m = re.search(r"\b(section|rule|regulation)\s+(\d{1,3})-?([a-z]{1,3})?", citation.lower())
     if not m:
+        return None
+    if m.group(3):                       # lettered section (25G/25H/25FF…) — see docstring
         return None
     kind = "rule" if m.group(1) in ("rule", "regulation") else "section"
     num = int(m.group(2))

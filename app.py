@@ -1139,7 +1139,20 @@ def _verify_quotes(data: dict) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
-def build_prompt(query: str, all_results: dict) -> str:
+_PROSPECTIVE_RE = re.compile(
+    r"\b(want to|wish to|plan(?:ning)? to|going to|intend to|thinking of|considering|about to|"
+    r"can i|may i|should i|how (?:do|should) i|do i need to|what'?s the [\w\s]*process)\b", re.I)
+_PAST_ACT_RE = re.compile(
+    r"\b(retrenched|terminated|dismissed|fired|sacked|closed down|laid (?:him|her|them|off)|"
+    r"did i|already|last (?:week|month|year)|have (?:i )?(?:retrenched|terminated|dismissed|fired))\b",
+    re.I)
+
+def _is_prospective(q: str) -> bool:
+    """Future intent ('want to', 'can I', 'planning to') with no completed-act marker — so a
+    not-yet-taken action is framed as guidance, not stamped 'non-compliant'."""
+    return bool(_PROSPECTIVE_RE.search(q or "") and not _PAST_ACT_RE.search(q or ""))
+
+def build_prompt(query: str, all_results: dict, applicability=None) -> str:
     grounding = corpus.render_all_results(all_results)
     no_prov   = [r["meta"]["short"] for r in all_results.values() if not r["found"]]
     parts     = [f"=== STATUTORY TEXT ===\n{grounding}"]
@@ -1148,6 +1161,20 @@ def build_prompt(query: str, all_results: dict) -> str:
             "=== NO PROVISION FOUND ===\n"
             + "\n".join(f"• {n}" for n in no_prov)
         )
+    if applicability:
+        # The establishment-size / length-of-service gating decides WHICH provisions apply
+        # (e.g. prior-permission Chapter X duties only from 300 workers). Give it to the model
+        # as authoritative so the verdict can't over-apply a provision the facts rule out.
+        parts.append(
+            "=== APPLICABLE THRESHOLDS (authoritative — your verdict MUST respect these) ===\n"
+            "Determined from the manager's facts. Do not apply a provision these rule out.\n"
+            + "\n".join(f"• {n}" for n in applicability))
+    if _is_prospective(query):
+        parts.append(
+            "=== FRAMING ===\n"
+            "This describes a PLANNED/PROPOSED action, not a completed one. Set \"verdict.status\" "
+            "to \"partial\" and put the steps needed to comply in \"actions\"; do not label a "
+            "not-yet-taken action \"non-compliant\".")
     parts.append(f"=== QUESTION ===\n{query}")
     return "\n\n".join(parts)
 
@@ -1738,7 +1765,14 @@ if st.session_state.pending:
 
     sources      = [r["meta"]["short"] for r in all_results.values() if r["found"]]
     no_provision = [r["meta"]["short"] for r in all_results.values() if not r["found"]]
-    user_msg     = build_prompt(raw_q, all_results)      # the model dissects the manager's real words
+    # Establishment-size / service gating, computed BEFORE the answer so the verdict respects the
+    # threshold that decides which Chapter applies — then reused as the applicability box below.
+    _topic = intake.topic(corrected_q)
+    _got   = st.session_state.pop("intake_got", None)
+    if _got is None:
+        _got = intake.facts_from_query(corrected_q)
+    _notes = intake.applicability(_topic, _got or {}) if _topic else []
+    user_msg     = build_prompt(raw_q, all_results, applicability=_notes)
     is_compare   = bool(sources) and (force_compare or _is_comparison(corrected_q))
 
     with st.chat_message("assistant", avatar="⚖️"):
@@ -1762,14 +1796,9 @@ if st.session_state.pending:
             with st.spinner("Analysing the statute…"):
                 data = generate_answer([{"role": "user", "content": user_msg}])
             data = _verify_quotes(data)
-        # Enrich with verified establishment-size applicability + related-provision chips
-        _topic = intake.topic(corrected_q)
-        _got = st.session_state.pop("intake_got", None)
-        if _got is None:
-            _got = intake.facts_from_query(corrected_q)
+        # Attach the (already-computed) size applicability + related-provision chips
         cross = []
         if isinstance(data, dict) and "_raw" not in data and not is_compare and _topic:
-            _notes = intake.applicability(_topic, _got or {})
             if _notes:
                 data["_applicability"] = _notes
             cross = intake.cross_refs(_topic)
