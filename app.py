@@ -920,6 +920,10 @@ Field rules:
   "actions" with concrete next steps (only when NOT fully compliant, else []).
 - type "info": set "verdict" to null; each issue "status" is "info"; "actions" may list helpful next
   steps or be [].
+- Do NOT assume facts the manager did not state. When a completed action omits whether a required
+  step (notice, compensation, inquiry, permission) was actually taken, use verdict.status "partial"
+  and state the requirement CONDITIONALLY ("compliant if you gave the §X notice + compensation;
+  otherwise that step is missing") — never declare "non-compliant" on a fact that wasn't stated.
 - Every "analysis[].citation" MUST also appear in "authorities" with its VERBATIM quote. When a
   Central Rule prescribes the procedure, forms, timelines, registers or rates for a Section you rely
   on, cite and quote the Rule as well as the Section.
@@ -935,7 +939,9 @@ ABSOLUTE RULES:
   "restatement"/"verdict.summary".
 - If the supplied text answers only PART of the question, answer that part fully and state plainly
   what the supplied provisions do NOT cover — never close the gap with outside knowledge or a guess.
-- Be specific in plain English (numbers, days, thresholds); explain reasoning, don't pad.
+- Be specific in plain English (numbers, days, thresholds), taking each figure VERBATIM from the
+  exact provision you cite — never carry a number across Sections (a one-month notice in the general
+  retrenchment Section is not the three-month notice in the special-establishment Section).
 - Output VALID JSON. Escape quotes and newlines inside strings. No text outside the JSON object."""
 
 
