@@ -1183,7 +1183,7 @@ def _render_authorities(auths, label: str):
             badge = ('<span class="lc-verified">✓ verbatim</span>' if v
                      else '<span class="lc-unverified">⚠ unverified</span>' if v is False else '')
             cls = " unverified" if v is False else ""
-            text = a.get("source_text") or a.get("quote", "")
+            text = corpus._trim(a.get("source_text") or a.get("quote", ""))
             st.markdown(
                 f'<div class="lc-auth-cite">{_esc(a.get("citation") or "Provision")} {badge}</div>'
                 f'<blockquote class="lc-auth-quote{cls}">{_esc_ml(text)}</blockquote>',

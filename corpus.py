@@ -94,16 +94,38 @@ def correct_query(q: str) -> tuple[str, list[tuple[str, str]]]:
     return " ".join(corrected_tokens), corrections
 
 
-def _split_numbered(text):
-    cands = [(int(m.group(1)), m.start()) for m in re.finditer(r"(?m)^\s{0,4}(\d{1,3})\.\s", text)]
-    items, expected, open_at, open_num = [], 1, None, None
-    for num, pos in cands:
-        if num == expected:
-            if open_at is not None:
-                items.append((open_num, text[open_at:pos]))
-            open_at, open_num, expected = pos, num, num + 1
+# Provision headings. Codes/old-Acts: "N." / "NA." at a line start (captures sub-lettered
+# sections like 25F). Central Rules additionally require a "N. Title.-" shape, so embedded
+# numbered lists (repealed-rule lists, form fields, first-aid items) can't pose as rules.
+_HEAD_CODE = re.compile(r"(?m)^\s{0,4}(\d{1,3})([A-Z]{0,2})\.\s")
+_HEAD_RULE = re.compile(r"(?m)^\s{0,4}(\d{1,3})([A-Z]{0,2})\.\s+[A-Z][^\n]{0,160}?\.\s*-")
+# A standalone "FORM-I" / "FORM-XXI." heading line — marks the start of the form templates.
+_FORMS_TAIL = re.compile(r"(?m)^\s*FORM[ -][IVXLCDM\d]+\.?\s*$")
+
+
+def _split_numbered(text, kind="code"):
+    """Split a body into (label, segment) per provision. Acceptance is monotonic with
+    small-gap tolerance — a single missed/garbled heading never collapses the rest of the
+    document into one giant chunk, and resets (lists that restart at 1) are ignored."""
+    pat = _HEAD_RULE if kind == "rules" else _HEAD_CODE
+    # Rules headings carry a "Title.-" so they're trustworthy — tolerate big gaps (some
+    # rule numbers go unmatched). Code/old-Act headings are barer, so stay conservative.
+    max_gap = 25 if kind == "rules" else 3
+    cands = [(int(m.group(1)), m.group(2), m.start()) for m in pat.finditer(text)]
+    items, last, open_at, open_lbl = [], None, None, None
+    for num, suf, pos in cands:
+        if last is None:
+            accept = num <= 3                              # sequence must start at the top
+        else:
+            ln, ls = last
+            accept = (num == ln and suf > ls) or (0 < num - ln <= max_gap)
+        if not accept:
+            continue
+        if open_at is not None:
+            items.append((open_lbl, text[open_at:pos]))
+        open_at, open_lbl, last = pos, f"{num}{suf}", (num, suf)
     if open_at is not None:
-        items.append((open_num, text[open_at:].strip()))
+        items.append((open_lbl, text[open_at:].strip()))
     return items
 
 
@@ -128,9 +150,15 @@ def parse_doc(text, kind):
     body = text[: sched_match.start()] if sched_match else text
     tail = text[sched_match.start():] if sched_match else ""
     chunks = []
-    for num, seg in _split_numbered(body):
-        chunks.append({"label": f"{label} {num}", "num": num, "text": seg.strip(),
-                       "preview": _preview(seg)})
+    for lbl, seg in _split_numbered(body, kind):
+        seg = seg.strip()
+        # The final rule has no closing heading, so it can swallow the trailing FORM
+        # templates. Only when a segment is implausibly long, cut it at the first
+        # standalone "FORM-<id>" heading (real long rules have no such heading inside).
+        if len(re.findall(r"\S+", seg)) > 4000:
+            seg = _FORMS_TAIL.split(seg, 1)[0].strip()
+        chunks.append({"label": f"{label} {lbl}", "num": int(re.match(r"\d+", lbl).group()),
+                       "text": seg, "preview": _preview(seg)})
     for title, seg in _schedules(tail):
         chunks.append({"label": title, "num": None, "text": seg, "preview": _preview(seg)})
     return chunks

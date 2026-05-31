@@ -20,13 +20,15 @@ API** — switch to any other Bedrock model with one secret (`BEDROCK_MODEL_ID`)
 Streamlit **Secrets** (server-side); end users never see or need it.
 
 ## What's already done
-Three codes are processed and built in: **Code on Wages 2019**, **Industrial Relations
-Code 2020**, **Code on Social Security 2020**. The app runs on whatever is loaded.
+All four Codes — **Code on Wages 2019**, **Industrial Relations Code 2020**, **Code on
+Social Security 2020**, **OSH & WC Code 2020** — plus their **2026 Central Rules** and the
+repealed Acts they replaced are processed and built in.
 
-## Add the rest (5 PDFs)
-Drop these into `documents/pdfs/` and run `python ingest.py`:
-OSH & WC Code 2020, and the four Central Rules (Wages, IR, Social Security, OSH).
-Filenames are matched by keyword, so exact names aren't needed.
+## Re-ingesting PDFs
+Drop official PDFs into `documents/pdfs/` and run `python ingest.py` (uses PyMuPDF).
+The Central Rules ship as **bilingual Gazette PDFs** (English + Hindi pages); ingestion
+keeps the **English pages only**, so the processed text is clean English. Filenames are
+matched by keyword, so exact names aren't needed.
 
 ## One-time AWS Bedrock setup
 Bedrock needs a **paid AWS account** (a valid card on file). Amazon Nova is a
