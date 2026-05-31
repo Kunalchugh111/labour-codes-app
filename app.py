@@ -13,6 +13,7 @@ import boto3
 import streamlit as st
 
 import corpus
+import intake
 
 # Amazon Nova Pro — first-party model, no AWS Marketplace subscription required.
 # Override with the BEDROCK_MODEL_ID secret to use a different Bedrock model.
@@ -509,6 +510,35 @@ ul.lc-action-list li::before {
   color: var(--gold); font-weight: 700;
 }
 ul.lc-action-list li:last-child, ul.lc-req li:last-child { margin-bottom: 0; }
+
+/* Applies-to-your-case — verified establishment-size / tenure thresholds */
+.lc-applies {
+  background: var(--navy-pale, #eef2f7); border: 1px solid var(--navy-3, #c7d3e6);
+  border-radius: 10px; padding: 15px 20px; margin-bottom: 18px;
+  animation: fadeUp .35s var(--ease) both;
+}
+.lc-applies .lc-section-label { color: var(--navy, #21314f); }
+ul.lc-applies-list { list-style: none; padding-left: 0 !important; margin: 0 !important; }
+ul.lc-applies-list li {
+  position: relative; padding-left: 22px; margin-bottom: 9px;
+  font-size: 13.5px; line-height: 1.6; color: var(--ink-2); font-weight: 400;
+}
+ul.lc-applies-list li::before {
+  content: "§"; position: absolute; left: 0; top: 0;
+  color: var(--navy, #21314f); font-weight: 700;
+}
+ul.lc-applies-list li:last-child { margin-bottom: 0; }
+
+/* Intake clarifying card + cross-reference chips */
+.lc-intake-head { font-size: 14.5px; font-weight: 600; color: var(--ink-2); margin-bottom: 6px; }
+.lc-intake-q {
+  font-family: 'Playfair Display', serif; font-style: italic;
+  color: var(--slate-3); font-size: 13.5px; margin-bottom: 12px;
+}
+.lc-xref-label {
+  font-size: 9.5px; font-weight: 700; letter-spacing: .2em; text-transform: uppercase;
+  color: var(--slate-3); margin: 16px 0 8px;
+}
 
 /* Citation pills */
 .lc-cite-row {
@@ -1167,6 +1197,13 @@ def _esc_ml(x) -> str:
 def _bullets(items) -> str:
     return "".join(f"<li>{_esc(x)}</li>" for x in items if str(x).strip())
 
+def _md_inline(s: str) -> str:
+    """Render the inline **bold**/*italic* in our own authored applicability notes (no user input)."""
+    s = _esc(s)
+    s = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", s)
+    s = re.sub(r"\*(.+?)\*", r"<em>\1</em>", s)
+    return s
+
 def _render_authorities(auths, label: str):
     """Citation pills + a verbatim-trust line + a collapsible panel of the cited
     provisions, each badged verified (✓) or unverified (⚠) by the guardrail."""
@@ -1330,6 +1367,16 @@ def render_answer(data: dict):
             unsafe_allow_html=True,
         )
 
+    # 3.5 — Applies-to-your-case: verified establishment-size / tenure thresholds
+    applies = [n for n in (data.get("_applicability") or []) if str(n).strip()]
+    if applies:
+        items = "".join(f"<li>{_md_inline(n)}</li>" for n in applies)
+        st.markdown(
+            f'<div class="lc-applies"><div class="lc-section-label">Applies to your case</div>'
+            f'<ul class="lc-applies-list">{items}</ul></div>',
+            unsafe_allow_html=True,
+        )
+
     # 4 — Authorities: citation pills + verbatim-verified collapsible text
     _render_authorities(data.get("authorities"), "📜  Show statutory text")
 
@@ -1344,6 +1391,9 @@ for key, default in [
     ("messages", []),
     ("pending", None),
     ("force_compare", False),
+    ("intake", None),          # active clarifying-questions card, or None
+    ("skip_intake", False),    # the next pending query has already been through intake
+    ("intake_got", None),      # facts gathered, for applicability after the answer
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -1355,6 +1405,36 @@ def _submit_compare(q: str):
     """Re-ask the same question, forced into old-Act comparison mode."""
     st.session_state.pending = q
     st.session_state.force_compare = True
+
+def _finalize_intake(skip: bool = False):
+    """Fold the chosen clarifying answers into the query and send it on to be answered."""
+    ik = st.session_state.intake
+    if not ik:
+        return
+    got = {}
+    if not skip:
+        for fact in ik["needed"]:
+            label = st.session_state.get(f"intake_{fact['key']}")
+            val = next((c for (l, c) in fact["opts"] if l == label), None)
+            if val:
+                got[fact["key"]] = val
+    st.session_state.intake = None
+    st.session_state.intake_got = got
+    st.session_state.pending = ik["q"] + intake.clause(got)
+    st.session_state.skip_intake = True
+
+def _render_followups(query, cross, show_compare, key_prefix):
+    """Cross-reference chips + the old-law comparison button, shown beneath an answer.
+    Rendered from both the live turn and the history loop, so keys are prefixed per message."""
+    if cross:
+        st.markdown('<div class="lc-xref-label">Related provisions to check</div>',
+                    unsafe_allow_html=True)
+        cols = st.columns(2)
+        for j, (label, q) in enumerate(cross):
+            cols[j % 2].button(label, key=f"{key_prefix}_x{j}", on_click=_submit, args=(q,))
+    if show_compare:
+        st.button("🔄  What changed from the old law?", key=f"{key_prefix}_chg",
+                  on_click=_submit_compare, args=(query,))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1549,16 +1629,30 @@ for _i, msg in enumerate(st.session_state.messages):
                 )
             _d = msg.get("data") or {"_raw": msg.get("content", "")}
             render_answer(_d)
-            if (msg.get("query") and msg.get("sources")
-                    and isinstance(_d, dict) and _d.get("type") != "comparison"
-                    and "_raw" not in _d):
-                st.button("🔄  What changed from the old law?",
-                          key=f"chg_hist_{_i}",
-                          on_click=_submit_compare, args=(msg["query"],))
+            _show_cmp = bool(msg.get("query") and msg.get("sources")
+                             and isinstance(_d, dict) and _d.get("type") != "comparison"
+                             and "_raw" not in _d)
+            _render_followups(msg.get("query"), msg.get("cross") or [], _show_cmp, f"hist_{_i}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# (Clarification UI removed — queries are answered directly)
+# Intake — a couple of one-tap clarifying questions when a scenario is missing decisive facts
+# ─────────────────────────────────────────────────────────────────────────────
+if st.session_state.intake and not st.session_state.pending:
+    _ik = st.session_state.intake
+    with st.chat_message("assistant", avatar="⚖️"):
+        st.markdown(
+            '<div class="lc-intake-head">A couple of quick details so the verdict is precise — '
+            'or skip and I\'ll answer in general terms.</div>'
+            f'<div class="lc-intake-q">“{_esc(_ik["q"])}”</div>',
+            unsafe_allow_html=True)
+        for _fact in _ik["needed"]:
+            st.radio(_fact["q"], [o[0] for o in _fact["opts"]],
+                     key=f"intake_{_fact['key']}", index=None, horizontal=True)
+        _b1, _b2, _ = st.columns([1.1, 1.5, 2.4])
+        _b1.button("Get my answer", type="primary", key="intake_go", on_click=_finalize_intake)
+        _b2.button("Skip — answer generally", key="intake_skip",
+                   on_click=_finalize_intake, args=(True,))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1567,6 +1661,7 @@ for _i, msg in enumerate(st.session_state.messages):
 if (
     not st.session_state.messages
     and not st.session_state.pending
+    and not st.session_state.intake
 ):
     st.markdown('<div class="lc-samples-wrap">', unsafe_allow_html=True)
     st.markdown('<div class="lc-samples-label">Try asking</div>', unsafe_allow_html=True)
@@ -1594,6 +1689,16 @@ if (
 # Process pending query
 # ─────────────────────────────────────────────────────────────────────────────
 if st.session_state.pending:
+    # Intake first: a fresh compliance scenario that's missing a decisive fact (tenure, head-count,
+    # reason) gets a short clarifying card; queries already through intake — or forced comparisons —
+    # go straight to the answer.
+    if st.session_state.skip_intake or st.session_state.force_compare:
+        st.session_state.skip_intake = False
+    elif (_needed := intake.screen(st.session_state.pending)):
+        st.session_state.intake = {"q": st.session_state.pending, "needed": _needed, "got": {}}
+        st.session_state.pending = None
+        st.rerun()
+
     raw_q = st.session_state.pending
     st.session_state.pending = None
 
@@ -1639,11 +1744,21 @@ if st.session_state.pending:
             with st.spinner("Analysing the statute…"):
                 data = generate_answer([{"role": "user", "content": user_msg}])
             data = _verify_quotes(data)
+        # Enrich with verified establishment-size applicability + related-provision chips
+        _topic = intake.topic(corrected_q)
+        _got = st.session_state.pop("intake_got", None)
+        if _got is None:
+            _got = intake.facts_from_query(corrected_q)
+        cross = []
+        if isinstance(data, dict) and "_raw" not in data and not is_compare and _topic:
+            _notes = intake.applicability(_topic, _got or {})
+            if _notes:
+                data["_applicability"] = _notes
+            cross = intake.cross_refs(_topic)
+
         render_answer(data)
-        if sources and not is_compare and isinstance(data, dict) and "_raw" not in data:
-            st.button("🔄  What changed from the old law?",
-                      key=f"chg_live_{len(st.session_state.messages)}",
-                      on_click=_submit_compare, args=(corrected_q,))
+        _show_cmp = bool(sources and not is_compare and isinstance(data, dict) and "_raw" not in data)
+        _render_followups(corrected_q, cross, _show_cmp, f"live_{len(st.session_state.messages)}")
 
     st.session_state.messages.append({
         "role":         "assistant",
@@ -1652,6 +1767,7 @@ if st.session_state.pending:
         "sources":      sources,
         "no_provision": no_provision,
         "corrections":  corrections,
+        "cross":        cross,
     })
     st.rerun()
 
