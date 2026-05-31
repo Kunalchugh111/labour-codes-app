@@ -916,14 +916,27 @@ Field rules:
 - ALWAYS fill "restatement" and "analysis". "analysis" is the heart of the answer: 1-4 issues, each
   spotting one legal question, naming the governing provision, and APPLYING it to the manager's
   facts (not a generic summary). Order issues from most to least important.
-- type "compliance": fill "verdict"; each issue "status" is "ok" / "risk" / "violation"; fill
+- type "compliance": fill "verdict"; each issue "status" is "ok" (the stated facts satisfy the
+  provision) / "risk" (the provision applies but the stated facts do NOT show whether it was met —
+  open/conditional) / "violation" (the stated facts AFFIRMATIVELY show it was NOT met); fill
   "actions" with concrete next steps (only when NOT fully compliant, else []).
+- verdict.status MUST match the WORST issue, never overstate: if any issue is "violation" →
+  "non-compliant"; else if any issue is "risk" → "partial"; only when EVERY issue is "ok" →
+  "compliant". A "compliant" verdict with a risk/violation issue or any outstanding action is wrong.
 - type "info": set "verdict" to null; each issue "status" is "info"; "actions" may list helpful next
   steps or be [].
-- Do NOT assume facts the manager did not state. When a completed action omits whether a required
-  step (notice, compensation, inquiry, permission) was actually taken, use verdict.status "partial"
-  and state the requirement CONDITIONALLY ("compliant if you gave the §X notice + compensation;
-  otherwise that step is missing") — never declare "non-compliant" on a fact that wasn't stated.
+- Do NOT assume facts the manager did not state — in EITHER direction. The manager not MENTIONING a
+  required step (notice, compensation, inquiry, permission) is NOT evidence it was skipped (that would
+  be "violation") nor that it was done (that would be "ok") — it is "risk". Mark such an unstated step
+  "risk" (which makes verdict.status "partial") and state it CONDITIONALLY ("compliant only if you
+  gave the §X notice + compensation; if you did not, that step is still outstanding"). Reserve
+  "violation" for a step the stated facts affirmatively show was missed ("I gave two days' notice").
+- WORKED EXAMPLE of the rules above — "I retrenched a worker (3 yrs' service, 120-employee firm) —
+  was that correct?" says nothing about notice or compensation. Eligibility to retrench → "ok"; the
+  one-month notice and the 15-days-per-year compensation are UNSTATED → each "risk" (not "ok", not
+  "violation"). Worst issue is "risk", so verdict.status = "partial", summary = "Lawful only if you
+  served one month's notice (or wages in lieu) and paid 15 days' wages per completed year — on the
+  facts given those steps are unconfirmed", and "actions" list those verifications.
 - Every "analysis[].citation" MUST also appear in "authorities" with its VERBATIM quote. When a
   Central Rule prescribes the procedure, forms, timelines, registers or rates for a Section you rely
   on, cite and quote the Rule as well as the Section.
@@ -1062,9 +1075,46 @@ def _converse_json(system: str, user_text: str,
         return {"_raw": _friendly_bedrock_error(e)}
 
 
+# A "compliant" headline must never sit above an unmet or unconfirmed issue. The model classifies
+# each issue (ok/risk/violation) reliably but is erratic about rolling them into verdict.status, so
+# we enforce a deterministic floor: the verdict is at least as severe as its worst issue.
+_ISSUE_TO_VERDICT = {"violation": "non-compliant", "risk": "partial", "ok": "compliant"}
+_VERDICT_RANK = {"compliant": 0, "partial": 1, "non-compliant": 2}
+
+
+def _reconcile_verdict(data: dict) -> dict:
+    """Raise verdict.status to match the worst issue when the model under-rates it (e.g. keeps a
+    'compliant' headline despite a 'risk' issue). Never lowers severity; leaves info-type answers
+    and verdicts with no classified issues untouched."""
+    if not isinstance(data, dict) or data.get("type") != "compliance":
+        return data
+    verdict = data.get("verdict")
+    if not isinstance(verdict, dict):
+        return data
+    derived = [_ISSUE_TO_VERDICT[s] for s in
+               (str(a.get("status", "")).strip().lower()
+                for a in (data.get("analysis") or []) if isinstance(a, dict))
+               if s in _ISSUE_TO_VERDICT]
+    if not derived:
+        return data
+    worst = max(derived, key=lambda v: _VERDICT_RANK[v])
+    orig = str(verdict.get("status", "")).strip().lower()
+    if _VERDICT_RANK.get(orig, -1) >= _VERDICT_RANK[worst]:
+        return data  # already at least as severe — keep the model's status and summary
+    verdict["status"] = worst
+    summ = str(verdict.get("summary", ""))
+    if not any(w in summ.lower() for w in ("if ", "only if", "provided", "unless", "outstanding",
+                                           "subject to")):
+        verdict["summary"] = ("Compliant only if each flagged step below was actually carried out; "
+                              "on the facts stated that cannot be confirmed."
+                              if worst == "partial" else
+                              "Non-compliant on the flagged step(s) below.")
+    return data
+
+
 def generate_answer(messages: list[dict]) -> dict:
     """Structured single answer (verdict / info)."""
-    return _converse_json(SYSTEM, messages[-1]["content"])
+    return _reconcile_verdict(_converse_json(SYSTEM, messages[-1]["content"]))
 
 
 def generate_comparison(user_text: str) -> dict:
