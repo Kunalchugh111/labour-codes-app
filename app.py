@@ -1406,6 +1406,16 @@ def _submit_compare(q: str):
     st.session_state.pending = q
     st.session_state.force_compare = True
 
+def _submit_explore(q: str):
+    """Cross-reference chip: answer the related provision directly, never via the intake card."""
+    st.session_state.pending = q
+    st.session_state.skip_intake = True
+
+def _clear_intake_widgets():
+    """Drop the radio widget state so a later card never pre-fills a previous answer."""
+    for k in [k for k in st.session_state if str(k).startswith("intake_")]:
+        del st.session_state[k]
+
 def _finalize_intake(skip: bool = False):
     """Fold the chosen clarifying answers into the query and send it on to be answered."""
     ik = st.session_state.intake
@@ -1418,6 +1428,7 @@ def _finalize_intake(skip: bool = False):
             val = next((c for (l, c) in fact["opts"] if l == label), None)
             if val:
                 got[fact["key"]] = val
+    _clear_intake_widgets()
     st.session_state.intake = None
     st.session_state.intake_got = got
     st.session_state.pending = ik["q"] + intake.clause(got)
@@ -1431,7 +1442,7 @@ def _render_followups(query, cross, show_compare, key_prefix):
                     unsafe_allow_html=True)
         cols = st.columns(2)
         for j, (label, q) in enumerate(cross):
-            cols[j % 2].button(label, key=f"{key_prefix}_x{j}", on_click=_submit, args=(q,))
+            cols[j % 2].button(label, key=f"{key_prefix}_x{j}", on_click=_submit_explore, args=(q,))
     if show_compare:
         st.button("🔄  What changed from the old law?", key=f"{key_prefix}_chg",
                   on_click=_submit_compare, args=(query,))
@@ -1700,10 +1711,12 @@ if st.session_state.pending:
     if st.session_state.skip_intake or st.session_state.force_compare:
         st.session_state.skip_intake = False
     elif (_needed := intake.screen(st.session_state.pending)):
+        _clear_intake_widgets()
         st.session_state.intake = {"q": st.session_state.pending, "needed": _needed, "got": {}}
         st.session_state.pending = None
         st.rerun()
 
+    st.session_state.intake = None     # about to answer — never leave a stale card on screen
     raw_q = st.session_state.pending
     st.session_state.pending = None
 

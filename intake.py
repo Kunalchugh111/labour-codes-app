@@ -61,7 +61,7 @@ def topic(q: str):
 _SCENARIO = re.compile(
     r"\b(i|we|my|our|us)\b|can i|did i|is it (?:legal|ok|okay|fine|allowed|valid|lawful)|"
     r"want to|planning to|going to|need to|how do i|do i (?:have|need)|should i|am i|"
-    r"\bemployee\b|\bworker\b|\bstaff\b", re.I)
+    r"\bemployees?\b|\bworkers?\b|\bworkmen\b|\bstaff\b", re.I)
 _NOT_SCENARIO = re.compile(
     r"what is\b|what are\b|defin|meaning of|how is .* defined|what changed|"
     r"difference between|compared? to|\bvs\b", re.I)
@@ -121,7 +121,12 @@ def facts_from_query(q: str) -> dict:
         got["tenure"] = ("with 5 or more years of continuous service" if y >= 5
                          else "with 1 to 5 years of continuous service" if y >= 1
                          else "with under one year of continuous service")
-    if re.search(r"misconduct", ql):
+    elif (mm := re.search(r"(\d+)\s*months?", ql)):
+        got["tenure"] = ("with 1 to 5 years of continuous service" if int(mm.group(1)) >= 12
+                         else "with under one year of continuous service")
+    elif "probation" in ql:
+        got["tenure"] = "with under one year of continuous service"
+    if re.search(r"(?<!not )misconduct", ql):       # "redundancy, not misconduct" must not count
         got["reason"] = "the reason being misconduct, after an inquiry"
     elif re.search(r"fixed[\s-]?term", ql):
         got["reason"] = "because a fixed-term contract has come to an end"
@@ -150,7 +155,7 @@ def applicability(topic_name: str, got: dict):
             notes.append("**Under 1 year of service** — the §70 retrenchment safeguards (one month's "
                          "notice + compensation) generally require **one year** of continuous service, "
                          "so they may not be triggered here.")
-        if "misconduct" in reason:
+        if "being misconduct" in reason:            # not the redundancy chip's "(not misconduct)"
             notes.append("**Misconduct dismissal** — a punitive dismissal for misconduct (after due "
                          "inquiry) is **not** 'retrenchment', so the notice/compensation rules do not "
                          "apply; the standing-orders disciplinary procedure governs instead.")
@@ -165,30 +170,54 @@ def applicability(topic_name: str, got: dict):
     return notes
 
 
-# ── Related provisions to also check (verified to exist in the corpus) ─────────
-# Each entry: (chip label, query to submit when clicked).
+# ── Related provisions to also check ───────────────────────────────────────────
+# Each entry: (chip label, query to submit, code key, provision label it must reach).
+# The queries are phrased so the right Code survives routing (distinctive content) and the
+# right provision is pinned (explicit Section/Rule where that doesn't hand routing to another
+# Code that happens to share the number). cross_ref_checks() gates every one of these in the
+# eval, so a corpus change can't silently make a chip point nowhere useful.
 _CROSS = {
     "retrench": [
-        ("Procedure for retrenchment", "Explain Section 71 of the Industrial Relations Code"),
-        ("Re-employment of retrenched worker", "Explain Section 72 of the Industrial Relations Code"),
-        ("Worker re-skilling fund", "Explain Section 83 of the Industrial Relations Code"),
-        ("Notice of retrenchment to the Government", "What does Rule 33 of the Industrial Relations Central Rules require for notice of retrenchment?"),
+        ("Procedure for retrenchment",
+         "Under the Industrial Relations Code, what is the procedure for retrenchment of workers in Section 71?",
+         "ir", "Section 71"),
+        ("Re-employment of retrenched workers",
+         "Must a retrenched worker be given preference for re-employment when the employer hires again, under the Industrial Relations Code?",
+         "ir", "Section 72"),
+        ("Worker re-skilling fund",
+         "Under the Industrial Relations Code, what is the worker re-skilling fund in Section 83?",
+         "ir", "Section 83"),
+        ("Notice of retrenchment to the Government",
+         "Under the Industrial Relations Central Rules, the notice of intended retrenchment to the Government in Rule 33?",
+         "ir", "Rule 33"),
     ],
     "closure": [
-        ("Conditions for closure", "What are the conditions and notice required for closure under the Industrial Relations Code?"),
-        ("Notice of intended closure", "What does Rule 29 of the Industrial Relations Central Rules require for notice of closure?"),
+        ("Notice and process for closure",
+         "Under the Industrial Relations Code, the notice and compensation required to close an establishment (Rule 29)?",
+         "ir", "Rule 29"),
     ],
     "gratuity": [
-        ("Payment of gratuity", "Explain Section 53 of the Code on Social Security"),
-        ("Continuous service", "How is continuous service defined for gratuity under the Code on Social Security?"),
+        ("Payment & calculation of gratuity",
+         "Under the Code on Social Security, the payment of gratuity to an employee under Section 53?",
+         "ss", "Section 53"),
     ],
     "maternity": [
-        ("Right to maternity benefit", "Explain Section 60 of the Code on Social Security"),
-        ("Notice of claim for maternity benefit", "Explain Section 62 of the Code on Social Security"),
+        ("Right to maternity benefit",
+         "When is a woman entitled to maternity benefit and for what maximum period under the Code on Social Security?",
+         "ss", "Section 60"),
+        ("Claiming maternity benefit",
+         "Under the Code on Social Security, the notice of claim for maternity benefit under Section 62?",
+         "ss", "Section 62"),
     ],
 }
 
 
 def cross_refs(topic_name: str):
-    """Related provisions for a topic as (label, query) pairs, or []."""
-    return _CROSS.get(topic_name, [])
+    """Related provisions for a topic as (label, query) pairs for the UI, or []."""
+    return [(lbl, q) for (lbl, q, _c, _s) in _CROSS.get(topic_name, [])]
+
+
+def cross_ref_checks():
+    """(label, query, code_key, provision_label) for every chip — for the routing gate."""
+    return [(lbl, q, code, prov)
+            for items in _CROSS.values() for (lbl, q, code, prov) in items]

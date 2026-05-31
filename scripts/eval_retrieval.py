@@ -75,6 +75,18 @@ def main():
             fails.append(f"{q!r} -> wanted old '{kw}' in {code}")
         print(f"  [{'ok ' if ok else 'FAIL'}] {code:5} ← {q}  (old: {kw if ok else sources[:60]})")
 
+    print("\n── CROSS-REFERENCE CHIPS (related-provision routing) ──")
+    import intake
+    for lbl, q, code, prov in intake.cross_ref_checks():
+        res = corpus.search_all(c, q, k=8)
+        kept = [cid for cid, r in res.items() if r["found"]]
+        labels = [ch["label"] for ch in res.get(code, {}).get("chunks", [])]
+        ok = code in kept and prov in labels
+        passed, failed = (passed + 1, failed) if ok else (passed, failed + 1)
+        if not ok:
+            fails.append(f"cross-ref {lbl!r} -> expected {code}/{prov} (route={kept})")
+        print(f"  [{'ok ' if ok else 'FAIL'}] {code:5} {prov:11} ← {lbl}")
+
     print("\n── GUARDRAIL (verbatim-quote checker) ──")
     sample = next(ch for ch in c["wages"]["chunks"] if len(ch["text"]) > 300)
     text = sample["text"]
