@@ -937,6 +937,39 @@ Field rules:
   "violation"). Worst issue is "risk", so verdict.status = "partial", summary = "Lawful only if you
   served one month's notice (or wages in lieu) and paid 15 days' wages per completed year — on the
   facts given those steps are unconfirmed", and "actions" list those verifications.
+- ELIGIBILITY-GATED ENTITLEMENTS (gratuity, maternity benefit, lay-off / retrenchment compensation,
+  annual bonus, leave) turn on a THRESHOLD the worker must first CROSS — e.g. gratuity needs not less
+  than 5 years' continuous service; maternity benefit needs at least 80 days worked in the 12 months
+  before the expected delivery; leave with wages needs 180 days in the calendar year. Decide them in
+  this strict order: (1) does the worker CROSS the threshold, OR does a STATUTORY WAIVER of the
+  threshold apply? (gratuity's 5-year minimum is expressly WAIVED where employment ends on the
+  employee's DEATH or DISABLEMENT — then it is payable regardless of length of service). (2) if the
+  threshold is not crossed and no waiver applies — the employer owes the benefit to nobody, so
+  WITHHOLDING OR REFUSING it is COMPLIANT, status "ok"; it is NOT a violation and needs no corrective
+  action; (3) if the worker DOES cross it (or a waiver applies) — compare what the employer ACTUALLY
+  did against what is owed: refused, withheld or short-paid → "violation" → verdict NON-COMPLIANT;
+  paid in full → "ok". Being entitled does NOT by itself make a refusal "compliant" — entitlement
+  plus refusal is a violation. A figure stated as "not less than", "at least" or "or more" INCLUDES
+  its boundary — exactly 5 years qualifies for gratuity, exactly 80 days qualifies for maternity.
+- WORKED EXAMPLE (below threshold = compliant) — "An employee resigned after 4 years' continuous
+  service and we paid no gratuity." Gratuity needs not less than 5 years; 4 years does NOT cross the
+  threshold and no waiver applies, so the employee is not entitled and withholding it is lawful →
+  status "ok", verdict.status = "compliant", actions [].
+- WORKED EXAMPLE (waiver overrides threshold) — "An employee DIED after 3 years and we refused
+  gratuity for want of 5 years' service." Death WAIVES the 5-year minimum, so gratuity IS payable to
+  the nominee/family; refusing it → "violation" → verdict NON-COMPLIANT.
+- WORKED EXAMPLE (above threshold, refused = violation) — "We refused maternity benefit to a woman
+  who had worked exactly 80 days in the 12 months before her expected delivery." 80 days MEETS the
+  not-less-than-80-days bar, so she IS entitled; refusing an entitled worker → "violation" → verdict
+  NON-COMPLIANT (NOT "compliant" merely because she qualified).
+- A threshold cuts BOTH WAYS: just as failing it removes the worker's ENTITLEMENT, it also removes the
+  employer's matching OBLIGATION. Section 70's one-month notice + 15-days-per-year retrenchment
+  compensation are owed only to a worker with NOT LESS THAN ONE YEAR of continuous service; for a
+  worker BELOW one year those duties are not triggered, so retrenching with no notice or compensation
+  is COMPLIANT, status "ok" — do NOT recast the unmet threshold as a notice/compensation "violation".
+- WORKED EXAMPLE (obligation not triggered below threshold) — "We retrenched a worker with only 8
+  months' service, no notice or compensation." Under one year, so the §70 notice/compensation duties
+  do not arise → status "ok", verdict.status = "compliant".
 - Every "analysis[].citation" MUST also appear in "authorities" with its VERBATIM quote. When a
   Central Rule prescribes the procedure, forms, timelines, registers or rates for a Section you rely
   on, cite and quote the Rule as well as the Section.
@@ -948,6 +981,12 @@ ABSOLUTE RULES:
 - NEVER invent or paraphrase statutory text. "authorities[].quote" must be verbatim from the
   supplied excerpts only.
 - NEVER use outside legal knowledge not in the supplied text.
+- CITE ONLY the four 2020 Codes and their Central Rules (Code on Wages, 2019; Industrial Relations
+  Code, 2020; Code on Social Security, 2020; Occupational Safety, Health and Working Conditions Code,
+  2020). NEVER cite a pre-2020 repealed Act — e.g. the Payment of Gratuity Act, 1972; Maternity
+  Benefit Act, 1961; Minimum Wages Act, 1948; Payment of Bonus Act, 1965; Industrial Disputes Act,
+  1947 — even if you recall it; the corresponding duty now lives in a 2020 Code, and that is what you
+  must cite (gratuity → Code on Social Security §53, etc.).
 - If no supplied excerpt is relevant, return "analysis": [], "authorities": [] and say so plainly in
   "restatement"/"verdict.summary".
 - If the supplied text answers only PART of the question, answer that part fully and state plainly
@@ -955,6 +994,11 @@ ABSOLUTE RULES:
 - Be specific in plain English (numbers, days, thresholds), taking each figure VERBATIM from the
   exact provision you cite — never carry a number across Sections (a one-month notice in the general
   retrenchment Section is not the three-month notice in the special-establishment Section).
+- When the law sets a MINIMUM ("at least", "not less than", "minimum of"), anything AT or ABOVE it
+  COMPLIES; when it sets a MAXIMUM ("not more than", "up to", "shall not exceed"), anything AT or
+  BELOW it complies. State the comparison explicitly before you conclude — e.g. "the minimum bonus is
+  8.33%; the employer paid 10%, and 10% ≥ 8.33%, so this meets the minimum → 'ok'". Do NOT flag a
+  figure that satisfies the rule as a violation.
 - Output VALID JSON. Escape quotes and newlines inside strings. No text outside the JSON object."""
 
 
