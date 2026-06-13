@@ -17,7 +17,7 @@ about and that this session's bugs kept violating:
 Run:  AWS_BEARER_TOKEN_BEDROCK=... AWS_REGION=... python3 scripts/eval_broad.py [N]
 Writes /tmp/eval_broad.json (full rows + failures) and prints a scorecard.
 """
-import sys, os, re, json, importlib.util
+import sys, os, re, json, time, importlib.util
 from concurrent.futures import ThreadPoolExecutor
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -281,14 +281,26 @@ def main():
 
     def run(item):
         code, cat, numeric, q = item
-        try:
-            d = H._answer(app, intake, q)
-        except Exception as e:
-            return {"code": code, "cat": cat, "q": q, "fails": ["error"], "ok": False, "err": str(e)[:120]}
+        # Retry with backoff: under parallelism Bedrock throttles and _answer comes back
+        # with no "type" (empty/failed parse). That is a harness artifact, not an app bug,
+        # so re-try before scoring rather than recording a false has_answer failure.
+        d = {}
+        for attempt in range(4):
+            try:
+                d = H._answer(app, intake, q)
+                if d.get("type"):
+                    break
+            except Exception as e:
+                d = {"_err": str(e)[:120]}
+            time.sleep(2 * (attempt + 1))
+        if not d.get("type"):
+            return {"code": code, "cat": cat, "q": q, "fails": ["error"], "ok": False,
+                    "err": d.get("_err", "no type after retries")}
         return score(app, code, cat, numeric, q, d)
 
     rows = []
-    with ThreadPoolExecutor(max_workers=8) as ex:
+    workers = int(os.environ.get("EVAL_WORKERS", "4"))
+    with ThreadPoolExecutor(max_workers=workers) as ex:
         for r in ex.map(run, scen):
             rows.append(r)
 
