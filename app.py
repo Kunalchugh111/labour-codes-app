@@ -598,6 +598,11 @@ blockquote.lc-auth-quote {
   color: var(--navy); background: var(--gold-pale); border: 1px solid var(--gold-border);
   border-radius: 10px; padding: 13px 18px; margin-bottom: 18px; line-height: 1.5;
 }
+.lc-cmp-empty {
+  font-size: 13.5px; line-height: 1.6; color: var(--slate-3);
+  background: var(--gold-pale); border: 1px solid var(--gold-border);
+  border-radius: 10px; padding: 13px 18px; margin-bottom: 14px;
+}
 .lc-cmp-topic {
   font-size: 10px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase;
   color: var(--slate-3); margin: 6px 0 8px;
@@ -1076,6 +1081,11 @@ RULES:
   CURRENT-law text. Never swap them.
 - If the previous law had no equivalent provision, set "old" to "No equivalent provision" and
   "old_cite" to "".
+- If the ENTIRE topic is new — the 2020 Codes introduced it and the previous law had nothing
+  comparable (e.g. gig/platform workers, fixed-term-employee gratuity) — do NOT return an empty
+  "changes" list. Emit one change whose "old" is "No equivalent provision in the previous law",
+  "old_cite" is "", "new"/"new_cite" state the current requirement, and "impact" explains the new
+  obligation. Set "headline" to say the requirement is newly introduced. Never return blank.
 - Report only changes the supplied texts actually show; never manufacture a difference. If the two
   texts say the same thing on a point, omit it rather than inventing a change.
 - authorities[].quote is VERBATIM from the supplied text only — never invent or paraphrase statute.
@@ -1442,9 +1452,18 @@ def render_comparison(data: dict):
     """Render an old-Act ↔ new-Code comparison: headline, per-change old|new columns,
     an impact line, and the verbatim provisions."""
     hl = str(data.get("headline", "")).strip()
+    changes = [c for c in (data.get("changes") or []) if isinstance(c, dict)]
     if hl:
         st.markdown(f'<div class="lc-cmp-headline">🔄 {_esc(hl)}</div>', unsafe_allow_html=True)
-    for ch in (data.get("changes") or []):
+    # No point-by-point changes — usually because the requirement is new under the 2020 Codes and
+    # the previous law had no equivalent. Say so instead of rendering a blank panel.
+    if not changes:
+        msg = (hl or "This appears to be a new requirement under the 2020 Codes, with no equivalent "
+               "provision in the previous law.") if not hl else \
+              "No point-by-point predecessor was found in the previous law — the statutory text in " \
+              "force is shown below."
+        st.markdown(f'<div class="lc-cmp-empty">ℹ️ {_esc(msg)}</div>', unsafe_allow_html=True)
+    for ch in changes:
         if not isinstance(ch, dict):
             continue
         st.markdown(f'<div class="lc-cmp-topic">{_esc(ch.get("topic", "Change"))}</div>',

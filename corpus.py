@@ -532,8 +532,11 @@ def search_old(entry: dict, query: str, k: int = 6, min_score: float = _MIN_SCOR
 # supplied to the model — so a fabricated/paraphrased quote can never pass as law.
 
 def normalize_for_match(s: str) -> str:
-    """Lowercase, drop punctuation, collapse whitespace — for tolerant substring matching."""
-    return re.sub(r"[^a-z0-9 ]", " ", re.sub(r"\s+", " ", (s or "").lower())).strip()
+    """Lowercase; collapse every run of non-alphanumerics to ONE space — for tolerant
+    substring matching. Done in a single pass so punctuation and whitespace normalise
+    identically (otherwise 'of—(a)' and 'of— (a)' yield different space counts and a
+    verbatim quote fails the substring test)."""
+    return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
 
 
 def quote_supported(quote: str, grounding_norm: str) -> bool:
