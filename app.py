@@ -444,6 +444,17 @@ section[data-testid="stBottom"] > div {
 .lc-verdict.partial       { background: var(--amber-bg); border-color: var(--amber-b); color: var(--amber); }
 
 /* ══ RESTATEMENT + ANALYSIS (the dissection) ════════════════════════════════ */
+.lc-answer {
+  background: var(--blue-bg, #eff6ff); border: 1px solid var(--blue-b, #bfdbfe);
+  border-radius: 10px; padding: 14px 18px; margin-bottom: 14px;
+  animation: fadeUp .3s var(--ease) both;
+}
+.lc-answer-label {
+  font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--blue, #2563eb); margin-bottom: 5px;
+}
+.lc-answer-text { font-size: 16px; font-weight: 600; line-height: 1.5; color: var(--ink, #0f172a); }
+.lc-answer-cite { font-size: 12.5px; font-weight: 600; color: var(--slate-3, #64748b); margin-top: 7px; }
 .lc-restate {
   font-size: 13.5px; line-height: 1.6; color: var(--slate-3); font-style: italic;
   margin-bottom: 16px; padding-left: 14px; border-left: 2px solid var(--line, #e2e8f0);
@@ -912,6 +923,7 @@ JSON shape:
 {
   "type": "compliance" | "info",
   "restatement": "one sentence restating the situation/question in your own words (shows you understood it)",
+  "direct_answer": "for an 'info' question ONLY: ONE plain-English sentence that DIRECTLY answers it, leading with the figure/period/rule a non-lawyer wants (e.g. 'Wages must be paid by the 7th of the following month.'). No section numbers or legalese here — the citation is carried separately. null for compliance.",
   "verdict": {"status": "compliant" | "non-compliant" | "partial", "summary": "one-sentence bottom line"},
   "analysis": [
     {
@@ -937,7 +949,10 @@ Field rules:
   "non-compliant"; else if any issue is "risk" → "partial"; only when EVERY issue is "ok" →
   "compliant". A "compliant" verdict with a risk/violation issue or any outstanding action is wrong.
 - type "info": set "verdict" to null; each issue "status" is "info"; "actions" may list helpful next
-  steps or be [].
+  steps or be []. ALSO fill "direct_answer" — one plain-English sentence that answers the question
+  head-on, leading with the concrete figure/period/threshold (e.g. "A woman is entitled to up to 26
+  weeks of paid maternity leave."). Put NO section numbers in it; if the supplied text does not
+  contain the answer, say so there plainly ("The supplied Codes don't state this rate.").
 - Do NOT assume facts the manager did not state — in EITHER direction. The manager not MENTIONING a
   required step (notice, compensation, inquiry, permission) is NOT evidence it was skipped (that would
   be "violation") nor that it was done (that would be "ok") — it is "risk". Mark such an unstated step
@@ -1367,6 +1382,10 @@ def _esc(x) -> str:
 def _esc_ml(x) -> str:
     return _esc(x).replace("\n", "<br>")
 
+def _clean_citation(c: str) -> str:
+    """Tidy a citation for the answer sub-line: drop the [ ] some Code names carry."""
+    return str(c or "").replace("[", "").replace("]", "").strip()
+
 def _bullets(items) -> str:
     return "".join(f"<li>{_esc(x)}</li>" for x in items if str(x).strip())
 
@@ -1491,16 +1510,29 @@ def render_answer(data: dict):
 
     is_comp = data.get("type") == "compliance"
     verdict = data.get("verdict") or {}
+    analysis = [a for a in (data.get("analysis") or []) if isinstance(a, dict)
+                and (str(a.get("issue", "")).strip() or str(a.get("finding", "")).strip())]
 
-    # 0 — Restatement (shows the situation was understood)
+    # 0 — Direct answer FIRST (info questions): a plain-English one-liner with the governing
+    # section right under it, so a basic question gets its answer up top, before the legalese.
+    direct = str(data.get("direct_answer", "")).strip()
+    if not is_comp and direct:
+        lead_cite = next((str(a.get("citation", "")).strip()
+                          for a in analysis if str(a.get("citation", "")).strip()), "")
+        cite_html = (f'<div class="lc-answer-cite">{_esc(_clean_citation(lead_cite))}</div>'
+                     if lead_cite else "")
+        st.markdown(
+            f'<div class="lc-answer"><div class="lc-answer-label">Answer</div>'
+            f'<div class="lc-answer-text">{_esc(direct)}</div>{cite_html}</div>',
+            unsafe_allow_html=True)
+
+    # 0b — Restatement (shows the situation was understood)
     restate = str(data.get("restatement", "")).strip()
     if restate:
         st.markdown(f'<div class="lc-restate">{_esc(restate)}</div>', unsafe_allow_html=True)
 
     # 1 — Verdict card (compliance) or lead paragraph (info, only when there's no analysis)
     status   = (verdict.get("status") or "").strip()
-    analysis = [a for a in (data.get("analysis") or []) if isinstance(a, dict)
-                and (str(a.get("issue", "")).strip() or str(a.get("finding", "")).strip())]
     if is_comp and status in _VERDICT:
         icon, label = _VERDICT[status]
         st.markdown(
