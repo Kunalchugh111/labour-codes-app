@@ -208,6 +208,13 @@ def _make_app():
     app.get_bedrock_client = lambda: boto3.client("bedrock-runtime", region_name=region)
     app._has_key = lambda: bool(os.environ.get("AWS_BEARER_TOKEN_BEDROCK"))
     app._model_id = lambda: os.environ.get("BEDROCK_MODEL_ID", app.MODEL_ID)
+    # Exercise the real hybrid (keyword + semantic) retrieval path when an index/key is
+    # present; the @st.cache_resource startup hook may not fire under bare import.
+    try:
+        import embeddings
+        embeddings.enable(app.LOADED)
+    except Exception:
+        pass
     return app
 
 

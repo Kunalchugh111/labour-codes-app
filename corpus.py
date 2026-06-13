@@ -367,7 +367,18 @@ def _wlen(ch: dict) -> int:
     return w
 
 
-def _score_chunk(ch: dict, terms: list[str], explicit: set[int], definitional: bool) -> float:
+# Optional semantic-similarity hook, installed by embeddings.enable(); None ⇒ pure
+# keyword search. Signature: (chunk, query) -> cosine in roughly [0, 0.5].
+_SEMANTIC = None
+# Weight on the semantic bonus. Titan cosines for a real topical match run ~0.1–0.3
+# while the length-normalised keyword score tops out near ~2–3, so this scale brings
+# a strong semantic hit to a comparable magnitude without letting it dominate an
+# explicit keyword/title match.
+_SEMANTIC_WEIGHT = 6.0
+
+
+def _score_chunk(ch: dict, terms: list[str], explicit: set[int], definitional: bool,
+                 query: str = "") -> float:
     low = ch["text"].lower()
     prev = ch["preview"].lower()
     title = (ch.get("title") or "").lower()
@@ -382,6 +393,10 @@ def _score_chunk(ch: dict, terms: list[str], explicit: set[int], definitional: b
             raw += 2.5                # a hit in the provision's title is a strong topical signal
     # length-normalise so long definition/admin chunks don't dominate everything
     score = raw / (1.0 + math.log(1.0 + _wlen(ch)))
+    # HYBRID: add a semantic bonus so a paraphrase with no shared keywords still ranks
+    # (augments, never replaces, the lexical score). No-op when no index is loaded.
+    if _SEMANTIC is not None and query:
+        score += _SEMANTIC_WEIGHT * _SEMANTIC(ch, query)
     if ch["num"] == 2 and ch["label"].startswith("Section") and not definitional:
         score *= 0.5                  # the definitions section is a noise magnet
     if definitional and ch["num"] == 2:
@@ -395,7 +410,7 @@ def _score_list(chunks: list[dict], query: str, boost: str = ""):
     terms = _terms(query + (" " + boost if boost else ""))
     explicit = {int(n) for n in re.findall(r"(?:section|rule)\s+(\d{1,3})", query.lower())}
     definitional = bool(_DEFINITIONAL_RE.search(query.lower()))
-    scored = [(_score_chunk(ch, terms, explicit, definitional), ch) for ch in chunks]
+    scored = [(_score_chunk(ch, terms, explicit, definitional, query), ch) for ch in chunks]
     scored.sort(key=lambda x: x[0], reverse=True)
     return scored, definitional
 

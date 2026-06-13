@@ -840,6 +840,19 @@ CFG, CORPUS_DATA = get_corpus()
 LOADED = dict(CORPUS_DATA)
 
 
+@st.cache_resource
+def _enable_semantic():
+    """Load the prebuilt embedding index for hybrid (keyword + semantic) retrieval.
+    Fail-soft: if the index or numpy is unavailable the app stays on keyword search."""
+    try:
+        import embeddings
+        return embeddings.enable(LOADED)
+    except Exception:
+        return False
+
+SEMANTIC_ON = _enable_semantic()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Bedrock client
 # ─────────────────────────────────────────────────────────────────────────────
