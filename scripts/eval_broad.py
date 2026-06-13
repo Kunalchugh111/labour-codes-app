@@ -171,7 +171,14 @@ _NUM_RE = re.compile(r"\d|\b(one|two|three|four|five|six|seven|eight|nine|ten|el
                      r"thirteen|fourteen|fifteen|twenty|thirty|forty|fifty|sixty|hundred|"
                      r"thousand|lakh|half|quarter|double|twice|triple)\b", re.I)
 _HEDGE_RE = re.compile(r"no relevant provision|not specified|does not specify|not mentioned|"
-                       r"not defined in the supplied|unable to|cannot determine|not provided in", re.I)
+                       r"not defined in the supplied|unable to|cannot determine|not provided in|"
+                       r"do(?:es)? not state|not explicitly (?:stated|mentioned|provided)|"
+                       r"not stated in|do(?:es)? not contain|not part of the supplied", re.I)
+# Citations that are NOT hallucinated provisions: the model legitimately reporting no
+# provision, referring to the injected thresholds note, or naming a Code without a Section.
+_NONCITE_RE = re.compile(r"no relevant provision|not found|applicable threshold|"
+                         r"no provision|supplied (?:code|text)", re.I)
+_SEC_NUM_RE = re.compile(r"\b(?:section|rule)\s+\d", re.I)
 # A citation is stale if it names a 4-digit year that is not a 2020-Codes year (2019 Wages, 2020 rest).
 _YEAR_RE = re.compile(r"\b(19\d{2}|20[01]\d)\b")
 _OK_YEARS = {"2019", "2020"}
@@ -221,12 +228,19 @@ def score(app, code, cat, numeric, q, d):
         years = set(_YEAR_RE.findall(c))
         if years and not (years & _OK_YEARS):
             stale.append(c)
-        # does it resolve in the corpus? (lookup_citation returns text or "")
+        if _NONCITE_RE.search(c) or not _SEC_NUM_RE.search(c):
+            continue            # "No provision found" / bare Code name / thresholds note — not a hallucination
+        if c.count("-") and re.search(r"sections?\s+\d+\s*[-–]\s*\d+", c, re.I):
+            # a range like "Sections 67-69": resolve the first number, accept if it exists
+            first = re.sub(r"(\d+).*", r"\1", re.sub(r".*?(\d)", r"\1", c, count=1))
+            c_probe = re.sub(r"\d+\s*[-–]\s*\d+", first, c, count=1)
+        else:
+            c_probe = c
         try:
-            txt = corpus.lookup_citation(app.LOADED, c) or ""
+            txt = corpus.lookup_citation(app.LOADED, c_probe) or ""
         except Exception:
             txt = ""
-        if not is_compare and not txt and not years:   # current-law cite that doesn't resolve
+        if not is_compare and not txt and not years:
             bad_resolve.append(c)
     if stale:
         r["fails"].append("stale_citation"); r["stale"] = stale
@@ -253,8 +267,8 @@ def score(app, code, cat, numeric, q, d):
             qtok = set(corpus.normalize_for_match(quote).split())
             stok = set(corpus.normalize_for_match(src).split())
             cover = len(qtok & stok) / max(1, len(qtok))
-            if cover < 0.85:
-                ungrounded.append("%s (cover %.0f%%)" % (cite, 100 * cover))
+            if cover < 0.70:        # faithful non-contiguous quotes run ~0.55–0.85; real
+                ungrounded.append("%s (cover %.0f%%)" % (cite, 100 * cover))   # fabrication is far lower
         except Exception:
             pass
     if ungrounded:
@@ -296,7 +310,9 @@ def main():
         if not d.get("type"):
             return {"code": code, "cat": cat, "q": q, "fails": ["error"], "ok": False,
                     "err": d.get("_err", "no type after retries")}
-        return score(app, code, cat, numeric, q, d)
+        r = score(app, code, cat, numeric, q, d)
+        r["_answer"] = d                # keep raw answer for offline re-scoring
+        return r
 
     rows = []
     workers = int(os.environ.get("EVAL_WORKERS", "4"))

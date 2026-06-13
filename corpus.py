@@ -478,7 +478,8 @@ def search(entry: dict, query: str, k: int = 8, min_score: float = _MIN_SCORE,
 _CODE_ANCHORS = [
     ("ss",    re.compile(r"\b(provident fund|pf\b|epf|gratuity|maternity benefit|"
                          r"esi\b|employees['’]? state insurance|pension|"
-                         r"employees['’]? compensation)\b", re.I)),
+                         r"employees['’]? compensation|compensation|dependant|disablement|"
+                         r"died|death|fatal|injur)\b", re.I)),
     ("wages", re.compile(r"\b(minimum wage|floor wage|bonus|equal remuneration)\b", re.I)),
     ("ir",    re.compile(r"\b(retrench|lay[\s-]?off|trade union|standing orders?|strike|lock[\s-]?out)\b", re.I)),
     ("osh",   re.compile(r"\b(overtime|appointment letter|annual leave|working hours|welfare officer)\b", re.I)),
