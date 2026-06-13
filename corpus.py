@@ -467,6 +467,21 @@ def search(entry: dict, query: str, k: int = 8, min_score: float = _MIN_SCORE,
                       if c["num"] == 2 and c["label"].startswith("Section")), None)
             if d:
                 result = [d] + result[:k - 1]
+
+    # Industrial Relations Chapter X: the prior-permission duties to lay off / retrench /
+    # close (§§78–83) only apply at 300+ workers, and THAT threshold lives in a separate
+    # section — §77 "Application of this Chapter". Co-include §77 whenever a Chapter X duty
+    # is surfaced, so "how many workers need permission" is answerable (the same stitch as
+    # PF's rate-and-deduction). Harmless when size gating excludes the duty: §77 just states
+    # the 300 cutoff, which supports a correct "below 300, no permission" answer.
+    if "industrial relations" in (entry["meta"].get("short", "").lower()):
+        if (any(c.get("num") in {78, 79, 80, 81, 82, 83} and c["label"].startswith("Section")
+                for c in result)
+                and not any(c.get("num") == 77 and c["label"].startswith("Section") for c in result)):
+            s77 = next((c for c in entry["chunks"]
+                        if c.get("num") == 77 and c["label"].startswith("Section")), None)
+            if s77:
+                result = result[:k - 1] + [s77]
     return result[:k]
 
 

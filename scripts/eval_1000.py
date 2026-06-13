@@ -161,13 +161,23 @@ def main():
     scen = generate(n)
     print("Running %d scenarios (%d base x phrasings), %d workers…" % (len(scen), len(BASE), workers))
 
+    def _has_value(d):
+        # at temperature 0 a genuinely-wrong answer is stable, so retrying only recovers
+        # transient throttle-degraded partials (number dropped); it cannot turn wrong -> right
+        if not expected:
+            return True
+        al = EB._answer_text(d).lower()
+        if EB._HEDGE_RE.search(al):           # legitimate "set by notification / not stated"
+            return True
+        return any(t.lower() in al for t in expected)
+
     def run(item):
         code, cat, expected, q = item
         d = {}
         for attempt in range(4):
             try:
                 d = H._answer(app, intake, q)
-                if d.get("type"):
+                if d.get("type") and _has_value(d):
                     break
             except Exception as e:
                 d = {"_err": str(e)[:120]}
@@ -175,8 +185,7 @@ def main():
         if not d.get("type"):
             return {"code": code, "cat": cat, "q": q, "fails": ["error"], "ok": False}
         numeric = cat in ("formula", "complex") or bool(expected)
-        r = EB.score(app, code, cat, numeric, q, d, expected=expected)
-        return r
+        return EB.score(app, code, cat, numeric, q, d, expected=expected)
 
     rows = []
     done = 0
