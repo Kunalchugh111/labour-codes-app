@@ -470,13 +470,37 @@ def search(entry: dict, query: str, k: int = 8, min_score: float = _MIN_SCORE,
     return result[:k]
 
 
+# Topical anchors — a concept that lives in ONE specific Code, so the Code must be kept
+# even when generic words (deduct, pay, wages) make another Code dominate routing. This is
+# the fix for "how much PF deduction" returning Wages alone: the RATE is in Social Security
+# §16, but "deduct…from wages" scores Wages so high the relative gate drops Social Security.
+# Deliberately narrow: only distinctive, single-Code terms (never generic ones).
+_CODE_ANCHORS = [
+    ("ss",    re.compile(r"\b(provident fund|pf\b|epf|gratuity|maternity benefit|"
+                         r"esi\b|employees['’]? state insurance|pension|"
+                         r"employees['’]? compensation)\b", re.I)),
+    ("wages", re.compile(r"\b(minimum wage|floor wage|bonus|equal remuneration)\b", re.I)),
+    ("ir",    re.compile(r"\b(retrench|lay[\s-]?off|trade union|standing orders?|strike|lock[\s-]?out)\b", re.I)),
+    ("osh",   re.compile(r"\b(overtime|appointment letter|annual leave|working hours|welfare officer)\b", re.I)),
+]
+
+
+def _anchored_codes(query: str) -> set:
+    return {cid for cid, pat in _CODE_ANCHORS if pat.search(query)}
+
+
 def _kept_codes(corpus_dict: dict, query: str) -> set:
     # Codes whose best match clears the gate (best code always kept).
     tops = {cid: _code_relevance(e, query) for cid, e in corpus_dict.items()}
     best = max(tops.values(), default=0.0)
     definitional = bool(_DEFINITIONAL_RE.search(query.lower()))
     gate = max(best * (_GATE_REL_DEF if definitional else _GATE_REL), _GATE_ABS)
-    return {cid for cid in corpus_dict if tops[cid] >= gate or tops[cid] >= best}
+    kept = {cid for cid in corpus_dict if tops[cid] >= gate or tops[cid] >= best}
+    # Always keep a Code a distinctive concept points to (if it has any real signal),
+    # so a dominant generic Code can't crowd out the one that actually governs the benefit.
+    kept |= {cid for cid in _anchored_codes(query)
+             if cid in corpus_dict and tops.get(cid, 0.0) >= _GATE_ABS}
+    return kept
 
 
 def search_all(corpus_dict: dict, query: str, k: int = 8, boost: str = "") -> dict:
