@@ -203,7 +203,7 @@ def _answer_text(d):
     return " ".join(p for p in parts if p)
 
 
-def score(app, code, cat, numeric, q, d):
+def score(app, code, cat, numeric, q, d, expected=None):
     r = {"code": code, "cat": cat, "q": q, "type": d.get("type"), "fails": []}
     atext = _answer_text(d).strip()
     is_compare = d.get("type") == "comparison"
@@ -280,6 +280,15 @@ def score(app, code, cat, numeric, q, d):
             r["fails"].append("should_have_hedged")
     elif hedged:
         r["fails"].append("hedged")
+
+    # wrong_value — for a formula with a known ground-truth value, the answer must contain
+    # one of the accepted forms (digit or word). Catches a confidently-wrong number
+    # (e.g. PF reported as ESI's 3.25% instead of 10%). Skipped when the model legitimately
+    # hedges that the figure is set by notification / not in the supplied text.
+    if expected and not hedged:
+        al = atext.lower()
+        if not any(tok.lower() in al for tok in expected):
+            r["fails"].append("wrong_value"); r["expected"] = expected
 
     r["ok"] = not r["fails"]
     r["lead"] = lead[:140]
