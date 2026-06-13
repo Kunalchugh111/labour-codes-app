@@ -618,8 +618,10 @@ def _resolve(corpus_dict: dict, citation: str):
         return None
     kind = "rule" if m.group(1) in ("rule", "regulation") else "section"
     num = int(m.group(2))
-    name = re.split(r"[—–-]", citation, 1)
-    qt = _name_tokens(name[1] if len(name) > 1 else citation)
+    # Match the Code/Act name on the WHOLE citation, not just the part after the dash —
+    # the model sometimes emits "Industrial Relations Code, 2020 — Section 70" (name first),
+    # and a name-after-dash assumption left those citations unresolved (no source text shown).
+    qt = _name_tokens(citation)
     _, resolvers, _ = _index(corpus_dict)
     best, score = None, 0
     for k, toks in resolvers:
