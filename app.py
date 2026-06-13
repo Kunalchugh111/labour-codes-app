@@ -991,6 +991,12 @@ ABSOLUTE RULES:
   "restatement"/"verdict.summary".
 - If the supplied text answers only PART of the question, answer that part fully and state plainly
   what the supplied provisions do NOT cover — never close the gap with outside knowledge or a guess.
+- DEFINITION questions ("what is X" / "define X"): give the statutory definition ONLY if the supplied
+  text actually contains it (look for the "X" means … clause, usually in Section 2, or an operative
+  definition in the relevant Section). Quote/paraphrase that text and cite it. If no supplied excerpt
+  defines the term, say so plainly ("'X' is not a defined term in the supplied provisions") — do NOT
+  supply a dictionary or common-usage meaning ("a token of appreciation", "commonly understood to
+  mean…"). A plausible-sounding invented definition is worse than admitting it is not defined.
 - Be specific in plain English (numbers, days, thresholds), taking each figure VERBATIM from the
   exact provision you cite — never carry a number across Sections (a one-month notice in the general
   retrenchment Section is not the three-month notice in the special-establishment Section).
@@ -1263,7 +1269,7 @@ def _excluded_ir_sections(topic: str, got: dict) -> set:
     return _CHAPTER_X_EXCL.get(topic, set()) if sub300 else set()
 
 def build_prompt(query: str, all_results: dict, applicability=None) -> str:
-    grounding = corpus.render_all_results(all_results)
+    grounding = corpus.render_all_results(all_results, query)
     no_prov   = [r["meta"]["short"] for r in all_results.values() if not r["found"]]
     parts     = [f"=== STATUTORY TEXT ===\n{grounding}"]
     if no_prov:
@@ -1294,14 +1300,14 @@ def build_prompt(query: str, all_results: dict, applicability=None) -> str:
     return "\n\n".join(parts)
 
 def build_comparison_prompt(query: str, all_results: dict) -> str:
-    new_g = corpus.render_all_results(all_results)
+    new_g = corpus.render_all_results(all_results, query)
     olds = []
     for cid, r in all_results.items():
         if not r["found"]:
             continue
         oc = corpus.search_old(LOADED[cid], query, k=6)
         if oc:
-            olds.append(corpus.render_chunks(oc))
+            olds.append(corpus.render_chunks(oc, query))
     old_g = "\n\n".join(olds) if olds else "(No repealed-Act text found for this topic.)"
     return (f"=== CURRENT LAW (in force) ===\n{new_g}\n\n"
             f"=== PREVIOUS LAW (repealed Acts) ===\n{old_g}\n\n"

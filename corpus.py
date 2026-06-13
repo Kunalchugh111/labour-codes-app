@@ -278,6 +278,81 @@ def _terms(q: str) -> list[str]:
     return list(expanded)
 
 
+# ── Definition extraction ──────────────────────────────────────────────────
+# A code's Section 2 is one long alphabetical list of '(x) "term" means …' clauses
+# (13k–46k chars). For a "what is X" query we must surface the ONE clause the user
+# asked about — dumping-then-truncating the whole list buries the answer past the
+# excerpt cap, which made the model report a real definition as "not defined".
+# '(x) "term" means …' — tolerate an interposed parenthetical such as
+# '"lay-off" (with its grammatical variations …) means …' between the term and the verb.
+_DEFN_CLAUSE = re.compile(
+    r'\(\s*[a-z0-9]{1,4}\s*\)\s*[“"]([^”"]{2,60})[”"]\s*(?:\([^)]{0,80}\)\s*)?(means|includes|shall)',
+    re.I)
+# A query is "definitional" when it asks what a term means. NB the prefix 'defin' must NOT be
+# followed by \b — 'define'/'definition' have letters after it, so a trailing boundary (the old
+# bug) made this never fire for those words; the phrase triggers keep their boundary.
+_DEFINITIONAL_RE = re.compile(r"\bdefin|\b(?:meaning|means|what is|what does|who is)\b")
+
+
+def _split_definitions(section2_text: str) -> list[tuple[str, str]]:
+    """Split a Section 2 body into [(term, clause_text)]. Each clause runs from its
+    own '(x) "term" means' marker up to the next clause marker."""
+    marks = list(_DEFN_CLAUSE.finditer(section2_text))
+    out = []
+    for i, m in enumerate(marks):
+        end = marks[i + 1].start() if i + 1 < len(marks) else len(section2_text)
+        term = re.sub(r"\s+", " ", m.group(1)).strip().lower()
+        clause = re.sub(r"\s+", " ", section2_text[m.start():end]).strip()
+        out.append((term, clause))
+    return out
+
+
+def _definition_terms(query: str) -> list[str]:
+    """The term(s) a definitional query is asking about — the quoted phrase if any,
+    else the content words after 'define/what is/meaning of'."""
+    ql = query.lower()
+    quoted = re.findall(r"[“\"']([a-z][a-z &/\-]{1,40})[”\"']", ql)
+    if quoted:
+        return [q.strip() for q in quoted]
+    m = re.search(r"(?:define|definition of|meaning of|what is|what does|who is)\s+"
+                  r"(?:an?\s+|the\s+)?([a-z][a-z &/\-]{1,40}?)"
+                  r"(?:\s+(?:mean|defined|under|in|as per|according)\b|[?.,]|$)", ql)
+    if m:
+        return [m.group(1).strip()]
+    return [w for w in re.findall(r"[a-z]{4,}", ql) if w not in STOP][:3]
+
+
+def define_chunk(entry: dict, query: str):
+    """If `query` asks for a definition this Code's Section 2 actually carries, return a
+    focused synthetic chunk with just the matching clause(s) — else None. The result
+    looks like a normal chunk so it renders/cites as 'Section 2'."""
+    s2 = next((c for c in entry["chunks"]
+               if c.get("num") == 2 and c["label"].startswith("Section")), None)
+    if not s2:
+        return None
+    defs = _split_definitions(s2["text"])
+    if not defs:
+        return None
+    wanted = _definition_terms(query)
+    hits = []
+    for w in wanted:
+        exact = [(t, c) for t, c in defs if t == w]
+        partial = [(t, c) for t, c in defs if w in t or t in w]
+        for t, c in (exact or partial):
+            if (t, c) not in hits:
+                hits.append((t, c))
+    if not hits:
+        return None
+    body = s2["text"][:60].split("means")[0]  # keep the "2. In this Code…" lead-in
+    lead = re.match(r"\s*\d+\.\s*(?:\(1\)\s*)?In this Code[^()]*?—", s2["text"])
+    text = ((lead.group(0).strip() + "\n") if lead else "") + \
+        "\n".join(c for _, c in hits[:4])
+    terms_str = ", ".join(f'"{t}"' for t, _ in hits[:4])
+    return {**s2, "text": text, "preview": _preview(text),
+            "title": (s2.get("title") or "Definitions") + f" — {terms_str}",
+            "_definition": True}
+
+
 _MIN_SCORE = 0.45      # floor on the length-normalised score
 _GATE_REL  = 0.8       # a code must reach this fraction of the best code's relevance…
 _GATE_REL_DEF = 0.5    # …relaxed for definitional queries (cross-code comparison is wanted)
@@ -319,7 +394,7 @@ def _score_chunk(ch: dict, terms: list[str], explicit: set[int], definitional: b
 def _score_list(chunks: list[dict], query: str, boost: str = ""):
     terms = _terms(query + (" " + boost if boost else ""))
     explicit = {int(n) for n in re.findall(r"(?:section|rule)\s+(\d{1,3})", query.lower())}
-    definitional = bool(re.search(r"\b(defin|meaning|means|what is|who is)\b", query.lower()))
+    definitional = bool(_DEFINITIONAL_RE.search(query.lower()))
     scored = [(_score_chunk(ch, terms, explicit, definitional), ch) for ch in chunks]
     scored.sort(key=lambda x: x[0], reverse=True)
     return scored, definitional
@@ -364,12 +439,19 @@ def search(entry: dict, query: str, k: int = 8, min_score: float = _MIN_SCORE,
 
     result = [c for _, c in picks]
 
-    # always include the definitions Section for "what is X" queries
-    if definitional and not any(c["num"] == 2 and c["label"].startswith("Section") for c in result):
-        d = next((c for c in entry["chunks"]
-                  if c["num"] == 2 and c["label"].startswith("Section")), None)
-        if d:
-            result = [d] + result[:k - 1]
+    # For "what is X" queries, lead with the definition. Prefer a FOCUSED chunk holding
+    # just the asked-for clause (so it isn't buried past the excerpt cap); fall back to
+    # the full Section 2 when we can't pinpoint the term.
+    if definitional:
+        focused = define_chunk(entry, query)
+        if focused is not None:
+            result = [focused] + [c for c in result
+                                  if not (c["num"] == 2 and c["label"].startswith("Section"))]
+        elif not any(c["num"] == 2 and c["label"].startswith("Section") for c in result):
+            d = next((c for c in entry["chunks"]
+                      if c["num"] == 2 and c["label"].startswith("Section")), None)
+            if d:
+                result = [d] + result[:k - 1]
     return result[:k]
 
 
@@ -377,7 +459,7 @@ def _kept_codes(corpus_dict: dict, query: str) -> set:
     # Codes whose best match clears the gate (best code always kept).
     tops = {cid: _code_relevance(e, query) for cid, e in corpus_dict.items()}
     best = max(tops.values(), default=0.0)
-    definitional = bool(re.search(r"\b(defin|meaning|means|what is|who is)\b", query.lower()))
+    definitional = bool(_DEFINITIONAL_RE.search(query.lower()))
     gate = max(best * (_GATE_REL_DEF if definitional else _GATE_REL), _GATE_ABS)
     return {cid for cid in corpus_dict if tops[cid] >= gate or tops[cid] >= best}
 
@@ -519,9 +601,25 @@ def lookup_title(corpus_dict: dict, citation: str):
 _MAX_CHUNK_CHARS = 3000
 
 
-def _trim(text: str) -> str:
+def _trim(text: str, query: str = "") -> str:
+    """Cap a chunk at _MAX_CHUNK_CHARS. A blind head-cut buries the answer when the
+    relevant passage sits deep in a long Section (definitions, §50, §13…), so when a
+    query is given we keep the WINDOW around the best cluster of query terms instead."""
     if len(text) <= _MAX_CHUNK_CHARS:
         return text
+    terms = [t for t in _terms(query) if len(t) >= 4] if query else []
+    low = text.lower()
+    hits = sorted({low.find(t) for t in terms if low.find(t) != -1})
+    if hits and hits[0] >= _MAX_CHUNK_CHARS:        # relevant text is past a plain head-cut
+        centre = hits[len(hits) // 2]
+        half = _MAX_CHUNK_CHARS // 2
+        start = max(0, centre - half)
+        start = max(0, text.rfind(". ", 0, start) + 1) or start
+        window = text[start:start + _MAX_CHUNK_CHARS]
+        last_stop = window.rfind(". ")
+        if last_stop > _MAX_CHUNK_CHARS // 2:
+            window = window[:last_stop + 1]
+        return "[…] " + window.strip() + " […]"
     cut = text[:_MAX_CHUNK_CHARS]
     last_stop = max(cut.rfind(". "), cut.rfind(".\n"))
     return (cut[:last_stop + 1] if last_stop > _MAX_CHUNK_CHARS // 2 else cut) + " [...]"
@@ -532,15 +630,18 @@ def _hdr(c: dict) -> str:
     return f"{c['source']} — {c['label']}" + (f": {t}" if t else "")
 
 
-def render_chunks(picks: list[dict]) -> str:
-    return "\n\n".join(f"===== {_hdr(c)} =====\n{_trim(c['text'])}" for c in picks)
+def render_chunks(picks: list[dict], query: str = "") -> str:
+    # A focused definition chunk is already pinpointed — never window-trim it.
+    return "\n\n".join(
+        f"===== {_hdr(c)} =====\n{c['text'] if c.get('_definition') else _trim(c['text'], query)}"
+        for c in picks)
 
 
-def render_all_results(all_results: dict) -> str:
+def render_all_results(all_results: dict, query: str = "") -> str:
     parts = []
     for cid, res in all_results.items():
         if res["found"]:
-            chunks_text = render_chunks(res["chunks"])
+            chunks_text = render_chunks(res["chunks"], query)
             sep = "=" * 64
             parts.append(f"{sep}\nCODE: {res['meta']['title']}\n{sep}\n{chunks_text}")
     return "\n\n".join(parts)
