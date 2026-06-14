@@ -406,10 +406,11 @@ def _score_chunk(ch: dict, terms: list[str], explicit: set[int], definitional: b
     return score
 
 
-def _score_list(chunks: list[dict], query: str, boost: str = ""):
+def _score_list(chunks: list[dict], query: str, boost: str = "", definitional=None):
     terms = _terms(query + (" " + boost if boost else ""))
     explicit = {int(n) for n in re.findall(r"(?:section|rule)\s+(\d{1,3})", query.lower())}
-    definitional = bool(_DEFINITIONAL_RE.search(query.lower()))
+    if definitional is None:                       # callers (e.g. old-Act comparison) can override
+        definitional = bool(_DEFINITIONAL_RE.search(query.lower()))
     scored = [(_score_chunk(ch, terms, explicit, definitional, query), ch) for ch in chunks]
     scored.sort(key=lambda x: x[0], reverse=True)
     return scored, definitional
@@ -554,7 +555,10 @@ def search_old(entry: dict, query: str, k: int = 6, min_score: float = _MIN_SCOR
     chunks = [ch for oa in entry.get("old_acts", []) for ch in oa["chunks"]]
     if not chunks:
         return []
-    scored, _ = _score_list(chunks, query)
+    # A comparison wants the SUBSTANTIVE old provision, never the definitions clause — so score
+    # as non-definitional even when the query reads like "what is X" (which would otherwise
+    # surface the old Act's Section 2 and bury the real change).
+    scored, _ = _score_list(chunks, query, definitional=False)
     return [c for s, c in scored[:k] if s >= min_score]
 
 

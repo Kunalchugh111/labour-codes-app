@@ -1077,6 +1077,9 @@ Respond with a SINGLE JSON object and NOTHING else — no prose, no markdown, no
 
 RULES:
 - Give the 2-4 changes that matter most to HR. Be concrete: days, amounts, thresholds, percentages.
+- LEAD with the change to the topic's CORE substantive rule (eligibility, amount/rate, threshold,
+  notice/compensation) — comparing it against the matching previous-law provision when that text is
+  supplied — BEFORE any peripheral or administrative change (insurance, nomination, registration).
 - "old"/"old_cite" come ONLY from the PREVIOUS-law text; "new"/"new_cite" ONLY from the
   CURRENT-law text. Never swap them.
 - Base every "old" on the supplied PREVIOUS-LAW text. If that text does not cover a point, do NOT
