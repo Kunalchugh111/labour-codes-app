@@ -328,14 +328,14 @@ section[data-testid="stBottom"] > div {
 /* The search input styling */
 [data-testid="stChatInput"] {
   background: var(--white) !important;
-  border: 1.5px solid var(--slate-4) !important;
-  border-radius: 14px !important;
-  box-shadow: var(--s2) !important;
+  border: 1.5px solid var(--indigo-border) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 14px 40px rgba(40,55,120,.16), 0 2px 6px rgba(40,55,120,.06) !important;
   transition: border-color .22s var(--ease), box-shadow .22s var(--ease) !important;
 }
 [data-testid="stChatInput"]:focus-within {
-  border-color: var(--navy-3) !important;
-  box-shadow: var(--s2), 0 0 0 4px rgba(29,52,112,.09) !important;
+  border-color: var(--indigo) !important;
+  box-shadow: 0 14px 40px rgba(40,55,120,.16), 0 0 0 4px rgba(79,91,213,.14) !important;
 }
 [data-testid="stChatInput"] textarea {
   color: var(--ink) !important;
@@ -353,12 +353,14 @@ section[data-testid="stBottom"] > div {
 
 /* Send button */
 [data-testid="stChatInputSubmitButton"] button {
-  background: var(--navy) !important;
-  border-radius: 10px !important;
-  transition: background .18s var(--ease) !important;
+  background: var(--grad-indigo) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 4px 14px rgba(79,91,213,.32) !important;
+  transition: filter .18s var(--ease), transform .18s var(--ease) !important;
 }
 [data-testid="stChatInputSubmitButton"] button:hover {
-  background: var(--navy-3) !important;
+  filter: brightness(1.08) !important;
+  transform: translateY(-1px) !important;
 }
 
 /* ══ SAMPLE QUESTIONS ═══════════════════════════════════════════════════════ */
@@ -509,8 +511,9 @@ button[data-testid="baseButton-primary"]:hover {
   opacity: .9; animation: fadeUp .3s var(--ease) both;
 }
 .lc-issue {
-  border: 1px solid var(--line, #e2e8f0); border-left-width: 3px; border-radius: 8px;
-  padding: 13px 16px; margin-bottom: 10px; background: var(--card, #fff);
+  border: 1px solid var(--slate-5); border-left-width: 3px; border-radius: 12px;
+  padding: 14px 18px; margin-bottom: 11px; background: var(--white);
+  box-shadow: var(--s1);
   animation: fadeUp .35s var(--ease) both;
 }
 .lc-issue-head {
@@ -611,16 +614,17 @@ ul.lc-applies-list li:last-child { margin-bottom: 0; }
 
 /* Collapsible statutory text */
 [data-testid="stExpander"] {
-  border: 1px solid var(--slate-5) !important; border-radius: 8px !important;
-  background: var(--white) !important; margin: 8px 0 4px !important;
-  box-shadow: none !important;
+  border: 1px solid var(--indigo-border) !important; border-radius: 12px !important;
+  background: var(--white) !important; margin: 10px 0 4px !important;
+  box-shadow: var(--s1) !important; overflow: hidden !important;
 }
 [data-testid="stExpander"] summary,
 [data-testid="stExpander"] details > summary,
 [data-testid="stExpander"] [data-testid="stExpanderToggle"] {
-  font-size: 12px !important; font-weight: 600 !important;
-  color: var(--navy-2) !important; letter-spacing: .03em !important;
+  font-size: 12px !important; font-weight: 700 !important;
+  color: var(--indigo) !important; letter-spacing: .04em !important;
 }
+[data-testid="stExpander"] summary:hover { background: var(--indigo-bg) !important; }
 .lc-auth-cite {
   font-family: 'Playfair Display', serif; font-size: 13.5px; font-weight: 700;
   color: var(--navy); margin: 12px 0 5px;
