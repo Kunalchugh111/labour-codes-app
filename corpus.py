@@ -188,6 +188,58 @@ def _extract_title(seg: str, kind: str):
     return cand if 2 < len(cand) <= 90 else None
 
 
+# ── Extraction-artifact scrubbing ────────────────────────────────────────────
+# The gazette PDFs print running page headers and side-margin notes that the text
+# extractor interleaves INTO the body (e.g. "36 THE GAZETTE OF INDIA EXTRAORDINARY
+# [P ART II—", a stray "67 of 1957.", and a section's marginal title split across
+# lines). These pollute both the quoted statute shown to the user and the model's
+# grounding, so strip them at load time.
+_GAZETTE_RE = re.compile(
+    r'[ \t]*(?:SEC\.\s*\d+\s*\]\s*)?(?:\d{1,4}\s+)?THE\s+GAZETTE\s+OF\s+INDIA\s+EXTRAORDINARY'
+    r'(?:\s*\[\s*P\s*ART\s+[IVXLCDM]+\s*[—–-]*|\s*\d{0,4})?', re.I)
+_AMEND_REF_RE = re.compile(r'(?m)^[ \t]*\d{1,3}\s+of\s+\d{4}\.?[ \t]*$')
+
+
+def _norm_title(s: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]", " ", (s or "").lower())).strip()
+
+
+def _strip_marginal_titles(text: str, titles_norm: set) -> str:
+    """Drop runs of lines that exactly reconstruct a known section title — those are
+    side-margin notes the extractor dumped mid-body, never real sentence text."""
+    if not titles_norm:
+        return text
+    lines = text.split("\n")
+    out, i = [], 0
+    while i < len(lines):
+        span = 0
+        for k in range(min(6, len(lines) - i), 0, -1):       # greedy: longest run first
+            joined = " ".join(l.strip() for l in lines[i:i + k] if l.strip())
+            if _norm_title(joined) in titles_norm:
+                span = k
+                break
+        if span:
+            i += span
+        else:
+            out.append(lines[i])
+            i += 1
+    return "\n".join(out)
+
+
+def _scrub_chunks(chunks: list[dict]) -> None:
+    """In-place: remove gazette headers, stray amendment refs, and misplaced marginal
+    titles from every chunk's text, then refresh its preview."""
+    titles_norm = {t for ch in chunks if (t := _norm_title(ch.get("title")))
+                   and len(t.split()) >= 2 and len(t) >= 10}
+    for ch in chunks:
+        txt = _GAZETTE_RE.sub(" ", ch["text"])
+        txt = _AMEND_REF_RE.sub("", txt)
+        txt = _strip_marginal_titles(txt, titles_norm)
+        txt = re.sub(r"[ \t]+\n", "\n", txt)
+        txt = re.sub(r"\n{3,}", "\n\n", txt).strip()
+        ch["text"], ch["preview"] = txt, _preview(txt)
+
+
 def parse_doc(text, kind, titles=None):
     label = "Section" if kind == "code" else "Rule"
     sched_match = re.search(r"THE\s+[A-Z]+\s+SCHEDULE", text)
@@ -210,6 +262,7 @@ def parse_doc(text, kind, titles=None):
     for title, seg in _schedules(tail):
         chunks.append({"label": title, "num": None, "title": None,
                        "text": seg, "preview": _preview(seg)})
+    _scrub_chunks(chunks)
     return chunks
 
 
