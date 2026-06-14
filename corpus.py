@@ -482,6 +482,21 @@ def search(entry: dict, query: str, k: int = 8, min_score: float = _MIN_SCORE,
                         if c.get("num") == 77 and c["label"].startswith("Section")), None)
             if s77:
                 result = result[:k - 1] + [s77]
+        # Unfair labour practices: the prohibition (§84) and the LIST (Second Schedule) are a
+        # formal pair that cite each other. When either surfaces the query is about unfair
+        # labour practices, so PROMOTE both to the front — otherwise a neighbouring trade-union
+        # section (e.g. §22 dispute adjudication) outranks them and gets miscited for
+        # "can we stop workers forming a union".
+        has_84 = any(c.get("num") == 84 and c["label"].startswith("Section") for c in result)
+        has_sch2 = any("second schedule" in c.get("label", "").lower() for c in result)
+        if has_84 or has_sch2:
+            s84 = next((c for c in entry["chunks"]
+                        if c.get("num") == 84 and c["label"].startswith("Section")), None)
+            sch = next((c for c in entry["chunks"]
+                        if "second schedule" in c.get("label", "").lower()), None)
+            lead = [c for c in (s84, sch) if c is not None]
+            rest = [c for c in result if c is not s84 and c is not sch]
+            result = lead + rest
     return result[:k]
 
 
