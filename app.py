@@ -154,6 +154,29 @@ section[data-testid="stBottom"] > div {
   animation: fadeIn .6s var(--ease) both;
 }
 
+/* Slim header — shown once a conversation starts, so answers own the viewport */
+.lc-hero-slim {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--navy);
+  margin: 0 -1.5rem 1.5rem;
+  padding: 11px 1.5rem;
+  border-bottom: 2px solid var(--gold);
+  animation: fadeIn .4s var(--ease) both;
+}
+.lc-hero-slim-mark {
+  width: 30px; height: 30px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%; border: 1px solid rgba(201,168,76,.45);
+  color: var(--gold-2); font-size: 15px;
+}
+.lc-hero-slim-name {
+  font-family: 'Playfair Display', serif; font-size: 17px; font-weight: 700;
+  color: #fff; letter-spacing: .01em;
+}
+.lc-hero-slim-name em { color: var(--gold-2); font-style: italic; }
+.lc-hero-slim-badges { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+@media (max-width: 560px) { .lc-hero-slim-badges { display: none; } }
+
 /* Layered atmospheric background */
 .lc-hero::before {
   content: '';
@@ -457,9 +480,9 @@ section[data-testid="stBottom"] > div {
 .lc-answer-text { font-size: 16px; font-weight: 600; line-height: 1.5; color: var(--ink, #0f172a); }
 .lc-answer-cite { font-size: 12.5px; font-weight: 600; color: var(--slate-3, #64748b); margin-top: 7px; }
 .lc-restate {
-  font-size: 13.5px; line-height: 1.6; color: var(--slate-3); font-style: italic;
-  margin-bottom: 16px; padding-left: 14px; border-left: 2px solid var(--line, #e2e8f0);
-  animation: fadeUp .3s var(--ease) both;
+  font-size: 12.5px; line-height: 1.55; color: var(--slate-3); font-style: italic;
+  margin: 0 0 14px; padding-left: 12px; border-left: 2px solid var(--slate-5);
+  opacity: .9; animation: fadeUp .3s var(--ease) both;
 }
 .lc-issue {
   border: 1px solid var(--line, #e2e8f0); border-left-width: 3px; border-radius: 8px;
@@ -1568,7 +1591,7 @@ def _render_authorities(auths, label: str):
     st.markdown(
         f'<div class="lc-cite-row"><span class="lc-src-label">Authority</span>{pills}</div>',
         unsafe_allow_html=True)
-    with st.expander(label, expanded=True):
+    with st.expander(label, expanded=False):
         for a in auths:
             v = a.get("verified")
             badge = ('<span class="lc-verified">✓ verbatim</span>' if v
@@ -1703,9 +1726,16 @@ def render_answer(data: dict):
         st.markdown(f'<div class="lc-lead">{_esc(data["answer"])}</div>',
                     unsafe_allow_html=True)
 
-    # 2 — Analysis: the dissection (issue → governing provision → application → per-issue status)
+    # 2 — Analysis: the dissection (issue → governing provision → application → per-issue status).
+    # For a compliance verdict the headline is the verdict card, so the issue-by-issue reasoning is
+    # drill-down — collapse it. For an info lookup the findings ARE the substance — keep them open.
     if analysis:
-        _render_analysis(analysis)
+        if is_comp:
+            n = len(analysis)
+            with st.expander(f"Detailed reasoning · {n} point{'s' if n != 1 else ''}", expanded=False):
+                _render_analysis(analysis)
+        else:
+            _render_analysis(analysis)
     else:
         # Backward-compat: older replies (and history) use requirements / key_points bullets
         points = (data.get("requirements") if is_comp else data.get("key_points")) or []
@@ -1816,7 +1846,21 @@ badges_html = "".join(
     for e in LOADED.values()
 )
 
-st.markdown(f"""
+# The full hero owns the welcome screen; once a conversation starts it collapses to a slim
+# bar so the answers — not the banner — own the viewport on every rerun.
+_conversation_started = bool(
+    st.session_state.messages or st.session_state.pending or st.session_state.intake)
+
+if _conversation_started:
+    st.markdown(f"""
+<div class="lc-hero-slim">
+  <div class="lc-hero-slim-mark">⚖</div>
+  <div class="lc-hero-slim-name">Labour Codes <em>Assistant</em></div>
+  <div class="lc-hero-slim-badges">{badges_html}</div>
+</div>
+""", unsafe_allow_html=True)
+else:
+    st.markdown(f"""
 <div class="lc-hero">
   <div class="lc-hero-rule"></div>
   <div class="lc-hero-inner">
@@ -2135,7 +2179,7 @@ if st.session_state.pending:
                 data = generate_comparison(build_comparison_prompt(corrected_q, all_results))
             data = _verify_quotes(data)
         else:
-            with st.spinner("Analysing the statute…"):
+            with st.spinner("Reading the provisions and drafting your answer…"):
                 data = generate_answer([{"role": "user", "content": user_msg}])
             data = _verify_quotes(data)
         # Attach the (already-computed) size applicability + related-provision chips
