@@ -1959,7 +1959,39 @@ def _demo_param():
 if _demo_param():
     _demo_samples = [
         {
+            "type": "info",
+            "direct_answer": "Gratuity is 15 days' wages for each completed year of service, "
+                             "payable once an employee has 5 years of continuous service.",
+            "restatement": "You're asking how gratuity works under the 2020 Codes.",
+            "analysis": [
+                {"issue": "When does gratuity become payable?",
+                 "finding": "Gratuity is payable on resignation, retirement, superannuation, death "
+                            "or disablement, once the employee has completed five years of "
+                            "continuous service (the five-year rule is waived on death/disablement).",
+                 "status": "info",
+                 "citation": "Section 53 — Code on Social Security, 2020"},
+            ],
+            "follow_ups": [
+                "What is the maximum gratuity payable?",
+                "How is gratuity calculated for piece-rated employees?",
+                "What happens if the employer pays gratuity late?",
+                "Are fixed-term employees entitled to gratuity?",
+            ],
+            "authorities": [
+                {"citation": "Section 53 — Code on Social Security, 2020", "verified": True,
+                 "quote": "Gratuity shall be payable to an employee on the termination of his "
+                          "employment after he has rendered continuous service for not less than "
+                          "five years."},
+            ],
+        },
+        {
             "type": "compliance",
+            "follow_ups": [
+                "How much retrenchment compensation is due here?",
+                "Do we need government permission to retrench?",
+                "Can we pay wages in lieu of the notice?",
+                "What notice must be filed with the Government?",
+            ],
             "restatement": "You let a worker with 3 years' service go for repeated late-coming, giving two days' notice and no compensation.",
             "verdict": {"status": "non-compliant",
                         "summary": "This is a retrenchment that skips the mandatory notice and compensation, so it is non-compliant."},
@@ -2069,8 +2101,10 @@ if _demo_param():
             _srcs = [a["citation"].split("—")[-1].strip() for a in _d["authorities"]]
             st.markdown(_src_row_html(_srcs, []), unsafe_allow_html=True)
             render_answer(_d)
-            if _d.get("_demo_topic"):               # showcase the related-provision chips too
-                _render_followups(None, intake.cross_refs(_d["_demo_topic"]), False, f"demo_{_i}")
+            # showcase the intelligent follow-up tiles (and legacy cross-ref chips)
+            _xref = intake.cross_refs(_d["_demo_topic"]) if _d.get("_demo_topic") else []
+            if _d.get("follow_ups") or _xref:
+                _render_followups(None, _xref, False, f"demo_{_i}", follow_ups=_d.get("follow_ups"))
     st.stop()
 
 
