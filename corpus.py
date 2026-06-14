@@ -4,7 +4,9 @@ corpus.py — load the processed code/rules text, split it into citable chunks
 """
 import json
 import math
+import os
 import re
+from dataclasses import dataclass
 from difflib import get_close_matches
 from pathlib import Path
 
@@ -430,8 +432,45 @@ _SEMANTIC = None
 _SEMANTIC_WEIGHT = 6.0
 
 
-def _score_chunk(ch: dict, terms: list[str], explicit: set[int], definitional: bool,
-                 query: str = "") -> float:
+# ── Retrieval mode & tunables ────────────────────────────────────────────────
+# A single switch so the SAME pipeline can run different ranking strategies and be
+# A/B-benchmarked (scripts/eval_retrieval_ab.py). The DEFAULT `lexical` mode is
+# byte-identical to the historical behaviour: score = lexical + 6.0*cosine, with
+# every legacy patch (the §2 penalty, _CODE_ANCHORS routing, the Rules-slot
+# reservation) on. The per-crutch flags let the benchmark retire a patch by flipping
+# a bool rather than editing scoring logic.
+@dataclass
+class RetrievalConfig:
+    mode: str = "lexical"            # lexical | embeddings_primary | fusion | rerank
+    candidate_n: int = 30            # top-N candidates kept before fusion/rerank truncation
+    semantic_weight: float = _SEMANTIC_WEIGHT   # lexical-mode cosine weight (today's 6.0)
+    rrf_k: int = 60                  # Reciprocal Rank Fusion constant (fusion mode)
+    embed_lex_weight: float = 0.15   # weight on lexical as a tie-breaker in embeddings_primary
+    use_s2_penalty: bool = True      # §2 (definitions) ×0.5 noise penalty
+    use_code_anchors: bool = True    # _CODE_ANCHORS force-keep in routing
+    reserve_rules: bool = True       # reserve ≥2 slots for relevant Rules
+
+    @classmethod
+    def from_env(cls) -> "RetrievalConfig":
+        return cls(mode=os.environ.get("RETRIEVAL_MODE", "lexical").strip().lower() or "lexical")
+
+
+_CFG = RetrievalConfig.from_env()
+
+
+def set_config(cfg: RetrievalConfig) -> None:
+    """Swap the active retrieval config (used by the A/B benchmark to sweep modes)."""
+    global _CFG
+    _CFG = cfg
+
+
+def get_config() -> RetrievalConfig:
+    return _CFG
+
+
+def _lexical_score(ch: dict, terms: list[str]) -> float:
+    """Length-normalised keyword score: saturated term counts, plus bonuses for a hit in
+    the preview (early/heading mention) and in the provision's marginal title."""
     low = ch["text"].lower()
     prev = ch["preview"].lower()
     title = (ch.get("title") or "").lower()
@@ -445,18 +484,83 @@ def _score_chunk(ch: dict, terms: list[str], explicit: set[int], definitional: b
         if title and t in title:
             raw += 2.5                # a hit in the provision's title is a strong topical signal
     # length-normalise so long definition/admin chunks don't dominate everything
-    score = raw / (1.0 + math.log(1.0 + _wlen(ch)))
-    # HYBRID: add a semantic bonus so a paraphrase with no shared keywords still ranks
-    # (augments, never replaces, the lexical score). No-op when no index is loaded.
-    if _SEMANTIC is not None and query:
-        score += _SEMANTIC_WEIGHT * _SEMANTIC(ch, query)
+    return raw / (1.0 + math.log(1.0 + _wlen(ch)))
+
+
+def _semantic_score(ch: dict, query: str) -> float:
+    """Cosine(query, chunk) via the embeddings hook; 0.0 when no index is loaded."""
+    return _SEMANTIC(ch, query) if (_SEMANTIC is not None and query) else 0.0
+
+
+def _structural_adjust(score: float, ch: dict, explicit: set[int], definitional: bool) -> float:
+    """Legal-structure score adjustments shared by every mode: the §2 noise penalty
+    (a retirable crutch, flag-gated), the definitional §2 boost, and the explicit
+    'Section N' override (always on — it honours an explicit user request)."""
     if ch["num"] == 2 and ch["label"].startswith("Section") and not definitional:
-        score *= 0.5                  # the definitions section is a noise magnet
+        if _CFG.use_s2_penalty:
+            score *= 0.5              # the definitions section is a noise magnet
     if definitional and ch["num"] == 2:
         score += 2.0
     if ch["num"] in explicit:
-        score += 1000.0               # user named this Section/Rule explicitly
+        score += 1000.0              # user named this Section/Rule explicitly
     return score
+
+
+def _combined_score(ch: dict, terms: list[str], explicit: set[int], definitional: bool,
+                    query: str = "") -> float:
+    """Historical lexical-mode score: length-normalised keyword score + semantic bonus, with
+    structural adjustments. Used directly for routing and old-Act comparison so those stay on a
+    stable, lexically-calibrated signal regardless of _CFG.mode."""
+    base = _lexical_score(ch, terms) + _CFG.semantic_weight * _semantic_score(ch, query)
+    return _structural_adjust(base, ch, explicit, definitional)
+
+
+def _score_chunk(ch: dict, terms: list[str], explicit: set[int], definitional: bool,
+                 query: str = "") -> float:
+    if _CFG.mode == "embeddings_primary":
+        base = _semantic_score(ch, query) + _CFG.embed_lex_weight * _lexical_score(ch, terms)
+        return _structural_adjust(base, ch, explicit, definitional)
+    # lexical (default — byte-identical to history); fusion/rerank reuse this combined score as
+    # their base candidate ranking and re-order it in `search` (see _score_list dispatch).
+    return _combined_score(ch, terms, explicit, definitional, query)
+
+
+def _fusion_rank(chunks, terms, query, explicit, definitional):
+    """Reciprocal Rank Fusion of a lexical ranking and a semantic ranking. RRF is rank-based,
+    so it sidesteps the lexical/semantic score-scale mismatch that lexical mode hand-tunes with
+    _SEMANTIC_WEIGHT. Structural adjustments (explicit override, §2 penalty) apply to the fused
+    score so they keep dominating regardless of scale."""
+    k = _CFG.rrf_k
+    lex_order = sorted(chunks, key=lambda ch: _lexical_score(ch, terms), reverse=True)
+    sem_order = sorted(chunks, key=lambda ch: _semantic_score(ch, query), reverse=True)
+    lex_rank = {id(ch): i for i, ch in enumerate(lex_order, 1)}
+    sem_rank = {id(ch): i for i, ch in enumerate(sem_order, 1)}
+    out = []
+    for ch in chunks:
+        rrf = 1.0 / (k + lex_rank[id(ch)]) + 1.0 / (k + sem_rank[id(ch)])
+        out.append((_structural_adjust(rrf, ch, explicit, definitional), ch))
+    return out
+
+
+def _rerank_rank(chunks, terms, query, explicit, definitional):
+    """Base-rank by fusion, take the top candidate_n, reorder with the cross-encoder reranker
+    (rerank.rerank, fail-soft), then apply structural adjustments. Falls back to the fusion
+    ranking when the reranker is unavailable, so rerank mode never crashes or empties results."""
+    fused = sorted(_fusion_rank(chunks, terms, query, explicit, definitional),
+                   key=lambda x: x[0], reverse=True)
+    cand = [ch for _, ch in fused[:_CFG.candidate_n]]
+    order = None
+    try:
+        import rerank as _rr
+        order = _rr.rerank(query, cand)            # [(chunk, relevance_score)] or None
+    except Exception:
+        order = None
+    if not order:
+        return fused                                # fail-soft → fusion ranking
+    out = [(_structural_adjust(score, ch, explicit, definitional), ch) for ch, score in order]
+    ranked = {id(ch) for _, ch in out}
+    tail = [(s * 1e-6, ch) for s, ch in fused if id(ch) not in ranked]   # keep a full list
+    return out + tail
 
 
 def _score_list(chunks: list[dict], query: str, boost: str = "", definitional=None):
@@ -464,7 +568,12 @@ def _score_list(chunks: list[dict], query: str, boost: str = "", definitional=No
     explicit = {int(n) for n in re.findall(r"(?:section|rule)\s+(\d{1,3})", query.lower())}
     if definitional is None:                       # callers (e.g. old-Act comparison) can override
         definitional = bool(_DEFINITIONAL_RE.search(query.lower()))
-    scored = [(_score_chunk(ch, terms, explicit, definitional, query), ch) for ch in chunks]
+    if _CFG.mode == "fusion":
+        scored = _fusion_rank(chunks, terms, query, explicit, definitional)
+    elif _CFG.mode == "rerank":
+        scored = _rerank_rank(chunks, terms, query, explicit, definitional)
+    else:                                          # lexical, embeddings_primary
+        scored = [(_score_chunk(ch, terms, explicit, definitional, query), ch) for ch in chunks]
     scored.sort(key=lambda x: x[0], reverse=True)
     return scored, definitional
 
@@ -477,20 +586,31 @@ def _code_relevance(entry: dict, query: str) -> float:
     # sum of the top-3 chunk scores — a truly relevant code has several strong hits,
     # a noise code has at most one mediocre one. Routing uses the ORIGINAL query only
     # (no boost), so an LLM keyword expansion can never knock a relevant code out.
-    scored, _ = _scored(entry, query)
-    return sum(s for s, _ in scored[:3])
+    # Routing always scores on the LEXICAL signal (lexical + semantic bonus), independent of
+    # _CFG.mode, so the routing gates (_GATE_ABS and the relative gate) stay calibrated to the
+    # magnitudes they were tuned for. The mode only changes WITHIN-code ranking (see `search`).
+    terms = _terms(query)
+    definitional = bool(_DEFINITIONAL_RE.search(query.lower()))
+    explicit = {int(n) for n in re.findall(r"(?:section|rule)\s+(\d{1,3})", query.lower())}
+    scored = sorted((_combined_score(ch, terms, explicit, definitional, query)
+                     for ch in entry["chunks"]), reverse=True)
+    return sum(scored[:3])
 
 
 def search(entry: dict, query: str, k: int = 8, min_score: float = _MIN_SCORE,
            boost: str = "") -> list[dict]:
     scored, definitional = _scored(entry, query, boost)
-    scored = [(s, c) for s, c in scored if s >= min_score]
+    # The 0.45 floor is calibrated to lexical magnitudes; the semantic/fusion/rerank rankings live
+    # on different scales and routing already decided this code is relevant, so only lexical mode
+    # applies the absolute floor (other modes keep their top candidates).
+    floor = min_score if _CFG.mode == "lexical" else 0.0
+    scored = [(s, c) for s, c in scored if s >= floor]
     picks = scored[:k]
 
     # reserve up to 2 slots for Rules that are genuinely relevant (not noise) so the
     # procedural Rule surfaces alongside its Section
     n_rules = sum(1 for _, c in picks if c["label"].startswith("Rule"))
-    if n_rules < 2 and picks:
+    if _CFG.reserve_rules and n_rules < 2 and picks:
         floor = 0.45 * picks[0][0]
         chosen = {id(c) for _, c in picks}
         extra = [(s, c) for s, c in scored
@@ -583,8 +703,9 @@ def _kept_codes(corpus_dict: dict, query: str) -> set:
     kept = {cid for cid in corpus_dict if tops[cid] >= gate or tops[cid] >= best}
     # Always keep a Code a distinctive concept points to (if it has any real signal),
     # so a dominant generic Code can't crowd out the one that actually governs the benefit.
-    kept |= {cid for cid in _anchored_codes(query)
-             if cid in corpus_dict and tops.get(cid, 0.0) >= _GATE_ABS}
+    if _CFG.use_code_anchors:
+        kept |= {cid for cid in _anchored_codes(query)
+                 if cid in corpus_dict and tops.get(cid, 0.0) >= _GATE_ABS}
     return kept
 
 
@@ -610,8 +731,13 @@ def search_old(entry: dict, query: str, k: int = 6, min_score: float = _MIN_SCOR
         return []
     # A comparison wants the SUBSTANTIVE old provision, never the definitions clause — so score
     # as non-definitional even when the query reads like "what is X" (which would otherwise
-    # surface the old Act's Section 2 and bury the real change).
-    scored, _ = _score_list(chunks, query, definitional=False)
+    # surface the old Act's Section 2 and bury the real change). Old Acts are never embedded and
+    # comparison is a lexical-grounding task, so score on the combined (lexical) signal regardless
+    # of _CFG.mode — keeping the 0.45 floor calibrated.
+    terms = _terms(query)
+    explicit = {int(n) for n in re.findall(r"(?:section|rule)\s+(\d{1,3})", query.lower())}
+    scored = sorted(((_combined_score(ch, terms, explicit, False, query), ch) for ch in chunks),
+                    key=lambda x: x[0], reverse=True)
     return [c for s, c in scored[:k] if s >= min_score]
 
 
