@@ -255,11 +255,11 @@ section[data-testid="stBottom"] > div {
 
 .lc-title {
   font-family: 'DM Sans', system-ui, sans-serif;
-  font-size: clamp(34px, 5vw, 52px);
-  font-weight: 600;
+  font-size: clamp(36px, 5.2vw, 54px);
+  font-weight: 700;
   color: var(--ink);
-  line-height: 1.1;
-  letter-spacing: -.025em;
+  line-height: 1.08;
+  letter-spacing: -.03em;
   margin-bottom: .1em;
 }
 .lc-title-em {
@@ -536,8 +536,8 @@ button[data-testid="baseButton-primary"]:hover {
 /* ══ ANSWER CARDS ═══════════════════════════════════════════════════════════ */
 .lc-block { margin-bottom: 16px; animation: fadeUp .35s var(--ease) both; }
 .lc-section-label {
-  font-size: 9.5px; font-weight: 700; letter-spacing: .2em;
-  text-transform: uppercase; color: var(--slate-3); margin-bottom: 9px;
+  font-size: 10px; font-weight: 800; letter-spacing: .18em;
+  text-transform: uppercase; color: var(--indigo); margin-bottom: 9px;
 }
 .lc-lead {
   font-size: 15px; line-height: 1.75; color: var(--ink-2); font-weight: 400;
@@ -595,8 +595,8 @@ ul.lc-applies-list li:last-child { margin-bottom: 0; }
   color: var(--slate-3); font-size: 13.5px; margin-bottom: 12px;
 }
 .lc-xref-label {
-  font-size: 9.5px; font-weight: 700; letter-spacing: .2em; text-transform: uppercase;
-  color: var(--slate-3); margin: 16px 0 8px;
+  font-size: 10px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--indigo); margin: 18px 0 9px;
 }
 
 /* Citation pills */
@@ -987,7 +987,8 @@ JSON shape:
     }
   ],
   "actions": ["imperative step the manager must take now", ...],
-  "authorities": [{"citation": "Section X / Rule X — [Code Name]", "quote": "exact statutory text"}]
+  "authorities": [{"citation": "Section X / Rule X — [Code Name]", "quote": "exact statutory text"}],
+  "follow_ups": ["3-4 short natural questions the manager would plausibly ask NEXT", ...]
 }
 
 Field rules:
@@ -1006,6 +1007,10 @@ Field rules:
   head-on, leading with the concrete figure/period/threshold (e.g. "A woman is entitled to up to 26
   weeks of paid maternity leave."). Put NO section numbers in it; if the supplied text does not
   contain the answer, say so there plainly ("The supplied Codes don't state this rate.").
+- ALWAYS fill "follow_ups" with 3-4 SHORT, natural questions the same manager would plausibly ask
+  next, specific to this topic and the four Codes (e.g. after a retrenchment verdict: "How much
+  retrenchment compensation is due?", "Do we need government permission?", "What notice must we
+  give?"). Each must be a self-contained question this assistant can answer; no numbering, ≤12 words.
 - Do NOT assume facts the manager did not state — in EITHER direction. The manager not MENTIONING a
   required step (notice, compensation, inquiry, permission) is NOT evidence it was skipped (that would
   be "violation") nor that it was done (that would be "ok") — it is "risk". Mark such an unstated step
@@ -1621,7 +1626,9 @@ def _render_authorities(auths, label: str):
             badge = ('<span class="lc-verified">✓ verbatim</span>' if v
                      else '<span class="lc-unverified">⚠ unverified</span>' if v is False else '')
             cls = " unverified" if v is False else ""
-            text = corpus._trim(a.get("source_text") or a.get("quote", ""))
+            # Show the FULL provision in the opt-in panel — it's drill-down, so never truncate
+            # it to "[...]"; the user opened it precisely to read the complete section.
+            text = (a.get("source_text") or a.get("quote", "")).strip()
             ttl = a.get("title")
             cite_html = _esc(a.get("citation") or "Provision")
             if ttl:
@@ -1848,10 +1855,18 @@ def _finalize_intake(skip: bool = False):
     st.session_state.pending = ik["q"] + intake.clause(got)
     st.session_state.skip_intake = True
 
-def _render_followups(query, cross, show_compare, key_prefix):
-    """Cross-reference chips + the old-law comparison button, shown beneath an answer.
-    Rendered from both the live turn and the history loop, so keys are prefixed per message."""
-    if cross:
+def _render_followups(query, cross, show_compare, key_prefix, follow_ups=None):
+    """Beneath an answer: the model's intelligent next-question tiles (preferred), else the
+    static per-topic cross-references, plus the old-law comparison button. Rendered from both
+    the live turn and the history loop, so keys are prefixed per message."""
+    ups = [u.strip() for u in (follow_ups or []) if isinstance(u, str) and u.strip()][:4]
+    if ups:
+        st.markdown('<div class="lc-xref-label">Continue — you might ask</div>',
+                    unsafe_allow_html=True)
+        cols = st.columns(2)
+        for j, q in enumerate(ups):
+            cols[j % 2].button(q, key=f"{key_prefix}_f{j}", on_click=_submit_explore, args=(q,))
+    elif cross:
         st.markdown('<div class="lc-xref-label">Related provisions to check</div>',
                     unsafe_allow_html=True)
         cols = st.columns(2)
@@ -2076,7 +2091,8 @@ for _i, msg in enumerate(st.session_state.messages):
             _show_cmp = bool(msg.get("query") and msg.get("sources")
                              and isinstance(_d, dict) and _d.get("type") != "comparison"
                              and "_raw" not in _d)
-            _render_followups(msg.get("query"), msg.get("cross") or [], _show_cmp, f"hist_{_i}")
+            _render_followups(msg.get("query"), msg.get("cross") or [], _show_cmp, f"hist_{_i}",
+                              follow_ups=(_d.get("follow_ups") if isinstance(_d, dict) else None))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2219,7 +2235,8 @@ if st.session_state.pending:
         # text isn't well retrieved, produced misleading "newly introduced" panels.
         _show_cmp = bool(sources and not is_compare and isinstance(data, dict) and "_raw" not in data
                          and not corpus._DEFINITIONAL_RE.search(corrected_q.lower()))
-        _render_followups(corrected_q, cross, _show_cmp, f"live_{len(st.session_state.messages)}")
+        _render_followups(corrected_q, cross, _show_cmp, f"live_{len(st.session_state.messages)}",
+                          follow_ups=(data.get("follow_ups") if isinstance(data, dict) else None))
 
     st.session_state.messages.append({
         "role":         "assistant",
