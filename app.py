@@ -1431,6 +1431,18 @@ def _amount_notes(query: str) -> list:
                     f"normal rate of wages. Taking the normal hourly rate as monthly ÷ (26 days × "
                     f"8 hours): 2 × (₹{wage:,} ÷ 208) × {hours} hours = ₹{ot:,}. (The 26×8 hourly "
                     f"basis is a convention, not fixed by the Code.)"))
+
+    # Deduction cap — §18(3): total deductions in a wage period must not exceed 50% of wages.
+    # §18 IS retrieved, but the model tends to say "exceeds the limit" without the figure, so
+    # state the 50% cap. Fires on a deduction-from-wages question that gives a percentage or
+    # asks about the limit/maximum (not on "how much PF is deducted", which has neither).
+    if (re.search(r"deduct", ql) and re.search(r"wage|salary|\bpay\b", ql)
+            and (re.search(r"\d{1,3}\s*(?:%|per ?cent)", ql)
+                 or re.search(r"limit|maximum|\bcap\b|exceed", ql))):
+        notes.append(("DEDUCTION LIMIT",
+            "Per §18(3) of the Code on Wages, the total of all deductions from an employee's "
+            "wages in any wage period must not exceed 50% of those wages (any excess is "
+            "recovered in the prescribed manner). State this 50% limit explicitly."))
     return notes
 
 
@@ -1463,8 +1475,8 @@ def build_prompt(query: str, all_results: dict, applicability=None) -> str:
             "to \"partial\" and put the steps needed to comply in \"actions\"; do not label a "
             "not-yet-taken action \"non-compliant\".")
     for heading, body in _amount_notes(query):
-        # Figures computed in code from the Code's formula — state them, don't recompute.
-        parts.append(f"=== {heading} CALCULATION (use this exact figure; do NOT recompute) ===\n{body}")
+        # Figures computed/fixed in code from the Code — state them, don't recompute.
+        parts.append(f"=== {heading} (use this exact figure; state it, do NOT recompute) ===\n{body}")
     parts.append(f"=== QUESTION ===\n{query}")
     return "\n\n".join(parts)
 
