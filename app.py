@@ -987,11 +987,11 @@ JSON shape:
       "issue": "the specific legal question this situation raises (short)",
       "finding": "2-4 sentences: what the governing provision requires AND how it applies to THESE facts",
       "status": "ok" | "risk" | "violation" | "info",
-      "citation": "Section X / Rule Y — [Code Name]"
+      "citation": "ONE provision only — e.g. \"Section 70 — Industrial Relations Code, 2020\" OR \"Rule 51 — Code on Wages (Central) Rules, 2020\""
     }
   ],
   "actions": ["imperative step the manager must take now", ...],
-  "authorities": [{"citation": "Section X / Rule X — [Code Name]", "quote": "exact statutory text"}],
+  "authorities": [{"citation": "ONE provision (a Section OR a Rule) — never combined", "quote": "exact statutory text"}],
   "follow_ups": ["3-4 short natural questions the manager would plausibly ask NEXT", ...]
 }
 
@@ -1060,12 +1060,18 @@ Field rules:
 - WORKED EXAMPLE (obligation not triggered below threshold) — "We retrenched a worker with only 8
   months' service, no notice or compensation." Under one year, so the §70 notice/compensation duties
   do not arise → status "ok", verdict.status = "compliant".
-- Every "analysis[].citation" MUST also appear in "authorities" with its VERBATIM quote. When a
-  Central Rule prescribes the procedure, forms, timelines, registers or rates for a Section you rely
-  on, cite and quote the Rule as well as the Section.
+- ONE PROVISION PER CITATION. Every "citation" names exactly ONE Section OR ONE Rule — NEVER combine
+  them with "/" or ";" (e.g. write "Section 50 — Code on Wages, 2019" and, as a SEPARATE issue,
+  "Rule 51 — Code on Wages (Central) Rules, 2020"). Combined citations break the verbatim-text lookup,
+  so the Rule's text would silently vanish from the answer.
+- When a Central Rule prescribes the procedure, forms, timelines, registers or rates for a Section you
+  rely on, ADD A SEPARATE analysis issue for that Rule (and a separate authorities entry) — so both
+  the Section AND the Rule appear with their own verbatim text. Procedural/registers/forms answers
+  should lean on the Rules.
+- Every "analysis[].citation" MUST also appear in "authorities" with its VERBATIM quote.
 - Each supplied excerpt is headed with its provision title (e.g. "Section 9 — Power to fix floor
-  wage"). Refer to provisions by that title in your finding so it reads naturally, but keep
-  "citation" in the exact "Section X / Rule Y — [Code Name]" form.
+  wage"). Refer to provisions by that title in your finding so it reads naturally, but keep each
+  "citation" in the exact one-provision "Section X — [Code Name]" / "Rule Y — [Rules Name]" form.
 
 ABSOLUTE RULES:
 - NEVER invent or paraphrase statutory text. "authorities[].quote" must be verbatim from the
