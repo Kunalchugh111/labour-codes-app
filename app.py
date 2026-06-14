@@ -1079,13 +1079,14 @@ RULES:
 - Give the 2-4 changes that matter most to HR. Be concrete: days, amounts, thresholds, percentages.
 - "old"/"old_cite" come ONLY from the PREVIOUS-law text; "new"/"new_cite" ONLY from the
   CURRENT-law text. Never swap them.
-- If the previous law had no equivalent provision, set "old" to "No equivalent provision" and
-  "old_cite" to "".
-- If the ENTIRE topic is new — the 2020 Codes introduced it and the previous law had nothing
-  comparable (e.g. gig/platform workers, fixed-term-employee gratuity) — do NOT return an empty
-  "changes" list. Emit one change whose "old" is "No equivalent provision in the previous law",
-  "old_cite" is "", "new"/"new_cite" state the current requirement, and "impact" explains the new
-  obligation. Set "headline" to say the requirement is newly introduced. Never return blank.
+- Base every "old" on the supplied PREVIOUS-LAW text. If that text does not cover a point, do NOT
+  assert the requirement is new or that "no equivalent existed" — the predecessor may simply not be
+  among the supplied excerpts (e.g. provident fund, ESI and gratuity all existed under earlier Acts).
+  Instead set "old" to "Previous-law text not available to compare" and "old_cite" to "".
+- If NO previous-law text is supplied for the topic at all, return a SINGLE change with that "old",
+  the current requirement in "new"/"new_cite", a neutral "headline" ("Comparison limited — previous-
+  law text for this topic wasn't found"), and an "impact" describing the current obligation. Do NOT
+  claim the topic is newly introduced, and never return an empty "changes" list.
 - Report only changes the supplied texts actually show; never manufacture a difference. If the two
   texts say the same thing on a point, omit it rather than inventing a change.
 - authorities[].quote is VERBATIM from the supplied text only — never invent or paraphrase statute.
@@ -1586,13 +1587,12 @@ def render_comparison(data: dict):
     changes = [c for c in (data.get("changes") or []) if isinstance(c, dict)]
     if hl:
         st.markdown(f'<div class="lc-cmp-headline">🔄 {_esc(hl)}</div>', unsafe_allow_html=True)
-    # No point-by-point changes — usually because the requirement is new under the 2020 Codes and
-    # the previous law had no equivalent. Say so instead of rendering a blank panel.
+    # No point-by-point changes — usually because the previous-law text for this topic wasn't
+    # found among the repealed Acts in the corpus. Say that honestly; do NOT assert the
+    # requirement is new (the predecessor may simply be missing, e.g. PF/ESI/gratuity).
     if not changes:
-        msg = (hl or "This appears to be a new requirement under the 2020 Codes, with no equivalent "
-               "provision in the previous law.") if not hl else \
-              "No point-by-point predecessor was found in the previous law — the statutory text in " \
-              "force is shown below."
+        msg = hl or ("A point-by-point comparison isn't available — the previous-law text for this "
+                     "topic wasn't found in the repealed Acts. The current statutory text is shown below.")
         st.markdown(f'<div class="lc-cmp-empty">ℹ️ {_esc(msg)}</div>', unsafe_allow_html=True)
     for ch in changes:
         if not isinstance(ch, dict):
@@ -2141,7 +2141,11 @@ if st.session_state.pending:
             cross = intake.cross_refs(_topic)
 
         render_answer(data)
-        _show_cmp = bool(sources and not is_compare and isinstance(data, dict) and "_raw" not in data)
+        # Offer "compare to old law" for substantive questions, but NOT for a plain definition
+        # ("what is X") — comparing a definition to repealed Acts is low value and, when the old
+        # text isn't well retrieved, produced misleading "newly introduced" panels.
+        _show_cmp = bool(sources and not is_compare and isinstance(data, dict) and "_raw" not in data
+                         and not corpus._DEFINITIONAL_RE.search(corrected_q.lower()))
         _render_followups(corrected_q, cross, _show_cmp, f"live_{len(st.session_state.messages)}")
 
     st.session_state.messages.append({
