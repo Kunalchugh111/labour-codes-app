@@ -1318,34 +1318,86 @@ def _excluded_ir_sections(topic: str, got: dict) -> set:
     sub300 = ("fewer than 50" in size) or ("50 to 299" in size)
     return _CHAPTER_X_EXCL.get(topic, set()) if sub300 else set()
 
-_GRAT_WAGE_RE = (r"(?:rs\.?|inr|₹)?\s*(\d{3,})\s*(?:/?\s*(?:per\s+)?month|/month|monthly|a month|p\.?m\b)",
-                 r"(?:drawing|earning|salary(?:\s+of)?|wages?\s+of|last\s+drawn(?:\s+wages?)?(?:\s+of)?)"
-                 r"\s*(?:rs\.?|inr|₹)?\s*(\d{3,})")
+# ── Deterministic amount calculators ─────────────────────────────────────────
+# LLMs compute statutory amounts unreliably (they drop the ÷26 factor, vary run to run),
+# so where the Code fixes a clean formula we compute the figure in code from a parsed
+# tenure + monthly wage and hand the model the result to STATE, not recompute.
+_WAGE_RE = (r"(?:rs\.?|inr|₹)?\s*(\d{3,})\s*(?:/?\s*(?:per\s+)?month|/month|monthly|a month|p\.?m\b)",
+            r"(?:drawing|earning|salary(?:\s+of)?|wages?\s+of|last\s+drawn(?:\s+wages?)?(?:\s+of)?)"
+            r"\s*(?:rs\.?|inr|₹)?\s*(\d{3,})")
 
-def gratuity_estimate(query: str):
-    """Deterministic gratuity figure for a monthly-rated employee — Code on Social Security
-    §53(2): (monthly wages ÷ 26) × 15 per completed year, a part-year over six months
-    counting as a full year. Returns a dict with the working, or None when the query is not
-    a gratuity question or lacks a clean tenure + monthly wage. LLMs do this arithmetic
-    unreliably (they drop the ÷26 factor), so we compute it in code and hand over the figure."""
-    ql = query.lower().replace(",", "")
-    if "gratuit" not in ql:
-        return None
+def _parse_tenure_wage(ql: str):
+    """From a comma-stripped lowercased query, pull (completed_years, extra_months,
+    monthly_wage). Returns None unless BOTH a year count and a monthly wage are present."""
     ym = re.search(r"(\d{1,2})\s*(?:completed\s+)?(?:years?|yrs?)\b", ql)
     if not ym:
         return None
     years = int(ym.group(1))
     mm = re.search(r"(\d{1,2})\s*months?\b", ql)
     months = int(mm.group(1)) if mm else 0
-    wm = re.search(_GRAT_WAGE_RE[0], ql) or re.search(_GRAT_WAGE_RE[1], ql)
+    wm = re.search(_WAGE_RE[0], ql) or re.search(_WAGE_RE[1], ql)
     if not wm:
         return None
     wage = int(wm.group(1))
     if wage < 1000 or not (1 <= years <= 60):
         return None
+    return years, months, wage
+
+
+def gratuity_estimate(query: str):
+    """Gratuity for a monthly-rated employee — Code on Social Security §53(2): (monthly
+    wages ÷ 26) × 15 per completed year, a part-year over six months counting as a year.
+    None unless it is a gratuity question with a clean tenure + monthly wage."""
+    ql = query.lower().replace(",", "")
+    if "gratuit" not in ql:
+        return None
+    tw = _parse_tenure_wage(ql)
+    if not tw:
+        return None
+    years, months, wage = tw
     eff = years + (1 if months > 6 else 0)
     return {"years": years, "months": months, "eff": eff, "wage": wage,
             "amount": round(wage / 26 * 15 * eff)}
+
+
+def _amount_notes(query: str) -> list:
+    """Calculation notes to bind into the prompt — each a (heading, body) pair. Covers the
+    amounts the Code fixes cleanly enough to compute; lay-off (needs days) and overtime
+    (needs hours) are left as formulae since their day/hour inputs and divisors are not
+    pinned by the Code."""
+    notes = []
+    ql = query.lower().replace(",", "")
+
+    g = gratuity_estimate(query)
+    if g:
+        yrs = f"{g['years']} years" + (f" {g['months']} months" if g['months'] else "")
+        notes.append(("GRATUITY",
+            f"Per §53(2) of the Code on Social Security, for a monthly-rated employee gratuity = "
+            f"(monthly wages ÷ 26) × 15 for each completed year, a part-year over six months "
+            f"counting as a full year. For ₹{g['wage']:,}/month and {yrs} (= {g['eff']} years): "
+            f"₹{g['wage']:,} ÷ 26 × 15 × {g['eff']} = ₹{g['amount']:,}, subject to any ceiling "
+            f"notified by the Central Government."))
+
+    # Retrenchment dues — §70: one month's notice (or wages in lieu) AND compensation of
+    # 15 days' average pay per completed year (part over six months = a year). The Code does
+    # not fix the day-divisor for "average pay", so we use the 26-day method (as §53 does for
+    # gratuity) and show the working, rather than asserting it as the only reading.
+    if "retrench" in ql:
+        tw = _parse_tenure_wage(ql)
+        if tw:
+            years, months, wage = tw
+            eff = years + (1 if months > 6 else 0)
+            comp = round(wage / 26 * 15 * eff)
+            yrs = f"{years} years" + (f" {months} months" if months else "")
+            notes.append(("RETRENCHMENT DUES",
+                f"Per §70 of the Industrial Relations Code, a worker in continuous service for "
+                f"at least a year gets: (a) one month's notice OR ₹{wage:,} wages in lieu of "
+                f"notice; and (b) compensation of 15 days' average pay for each completed year "
+                f"(part over six months = a year). Using the 26-day method for average pay: "
+                f"₹{wage:,} ÷ 26 × 15 × {eff} = ₹{comp:,} for {yrs}. If notice is paid in lieu, "
+                f"total cash ≈ ₹{wage + comp:,}. (Average-pay divisor not fixed by the Code; "
+                f"shown on the 26-day basis.)"))
+    return notes
 
 
 def build_prompt(query: str, all_results: dict, applicability=None) -> str:
@@ -1376,18 +1428,9 @@ def build_prompt(query: str, all_results: dict, applicability=None) -> str:
             "This describes a PLANNED/PROPOSED action, not a completed one. Set \"verdict.status\" "
             "to \"partial\" and put the steps needed to comply in \"actions\"; do not label a "
             "not-yet-taken action \"non-compliant\".")
-    g = gratuity_estimate(query)
-    if g:
-        # The model computes gratuity unreliably (it drops the ÷26 factor). Give it the figure,
-        # computed in code from §53(2), so it states the correct amount instead of inventing one.
-        yrs = f"{g['years']} years" + (f" {g['months']} months" if g['months'] else "")
-        parts.append(
-            "=== GRATUITY CALCULATION (use this exact figure; do NOT recompute) ===\n"
-            f"Per §53(2) of the Code on Social Security, for a monthly-rated employee gratuity = "
-            f"(monthly wages ÷ 26) × 15 for each completed year, a part-year over six months "
-            f"counting as a full year. For ₹{g['wage']:,}/month and {yrs} (= {g['eff']} years): "
-            f"₹{g['wage']:,} ÷ 26 × 15 × {g['eff']} = ₹{g['amount']:,}. State this figure, noting it "
-            f"is subject to any ceiling notified by the Central Government.")
+    for heading, body in _amount_notes(query):
+        # Figures computed in code from the Code's formula — state them, don't recompute.
+        parts.append(f"=== {heading} CALCULATION (use this exact figure; do NOT recompute) ===\n{body}")
     parts.append(f"=== QUESTION ===\n{query}")
     return "\n\n".join(parts)
 
