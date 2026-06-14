@@ -43,9 +43,20 @@ st.markdown("""
   --gold-2:      #E8C97A;
   --gold-pale:   #FBF3DC;
   --gold-border: #E4CE95;
-  --parchment:   #F8F6F0;
-  --parchment-2: #F2EFE6;
-  --parchment-3: #EAE5D8;
+  /* Modern AI-SaaS accent (periwinkle / indigo) + soft sky background */
+  --indigo:        #4F5BD5;
+  --indigo-2:      #6B78E6;
+  --indigo-3:      #3A45B0;
+  --indigo-bg:     #EEF1FD;
+  --indigo-border: #D6DCF8;
+  --sky-1:         #EAEFFB;
+  --sky-2:         #C9D5F1;
+  --sky-3:         #DCE4F6;
+  --grad-indigo:   linear-gradient(135deg, #6B78E6 0%, #4F5BD5 55%, #5B6EE1 100%);
+  /* repointed warm→cool so legacy "parchment" surfaces match the sky/indigo theme */
+  --parchment:   #F4F7FE;
+  --parchment-2: #ECF0FB;
+  --parchment-3: #DFE5F5;
   --white:       #FFFFFF;
   --ink:         #0A1525;
   --ink-2:       #1C2D47;
@@ -80,7 +91,7 @@ st.markdown("""
 html { scroll-behavior: smooth; }
 
 html, body, .stApp {
-  background: var(--parchment) !important;
+  background: linear-gradient(168deg, var(--sky-1) 0%, var(--sky-3) 46%, var(--sky-2) 100%) fixed !important;
   font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
@@ -94,11 +105,15 @@ html, body, .stApp {
 [data-testid="stStatusWidget"],
 #MainMenu, footer { display: none !important; }
 
-/* ── Main content column ─────────────────────────────────────────────────── */
+/* ── Main content column — a floating white card on the sky gradient ───────── */
 .main .block-container {
-  max-width: 820px !important;
-  padding: 0 1.5rem 9rem !important;
-  margin: 0 auto !important;
+  max-width: 880px !important;
+  background: var(--white);
+  border-radius: 26px;
+  box-shadow: 0 24px 70px rgba(40,55,120,.16), 0 2px 10px rgba(40,55,120,.06);
+  padding: 0 2.25rem 9rem !important;
+  margin: 2rem auto 2.5rem !important;
+  overflow: hidden;
 }
 
 /* ══ CRITICAL: Fix the black bar at bottom ════════════════════════════════
@@ -106,7 +121,7 @@ html, body, .stApp {
    inherits a dark background from the app shell. We must override EVERY layer.
    ═════════════════════════════════════════════════════════════════════════ */
 [data-testid="stBottom"] {
-  background: var(--parchment) !important;
+  background: transparent !important;
   border-top: none !important;
   box-shadow: none !important;
 }
@@ -118,8 +133,8 @@ html, body, .stApp {
 .stBottomBlockContainer > div,
 section[data-testid="stBottom"],
 section[data-testid="stBottom"] > div {
-  background: var(--parchment) !important;
-  background-color: var(--parchment) !important;
+  background: transparent !important;
+  background-color: transparent !important;
 }
 
 /* ══ Keyframes ══════════════════════════════════════════════════════════════ */
@@ -146,11 +161,10 @@ section[data-testid="stBottom"] > div {
 
 /* ══ HERO ════════════════════════════════════════════════════════════════════ */
 .lc-hero {
-  background: var(--navy);
-  margin: 0 -1.5rem 0;
+  background: transparent;
+  margin: 0;
   padding: 0;
   position: relative;
-  overflow: hidden;
   animation: fadeIn .6s var(--ease) both;
 }
 
@@ -160,61 +174,41 @@ section[data-testid="stBottom"] > div {
   background: var(--navy);
   margin: 0 -1.5rem 1.5rem;
   padding: 11px 1.5rem;
-  border-bottom: 2px solid var(--gold);
+  border-bottom: 2px solid var(--indigo);
   animation: fadeIn .4s var(--ease) both;
 }
 .lc-hero-slim-mark {
   width: 30px; height: 30px; flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center;
   border-radius: 50%; border: 1px solid rgba(201,168,76,.45);
-  color: var(--gold-2); font-size: 15px;
+  color: var(--indigo-2); font-size: 15px;
 }
 .lc-hero-slim-name {
   font-family: 'Playfair Display', serif; font-size: 17px; font-weight: 700;
   color: #fff; letter-spacing: .01em;
 }
-.lc-hero-slim-name em { color: var(--gold-2); font-style: italic; }
+.lc-hero-slim-name em { color: var(--indigo-2); font-style: italic; }
 .lc-hero-slim-badges { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
 @media (max-width: 560px) { .lc-hero-slim-badges { display: none; } }
 
-/* Layered atmospheric background */
+/* soft indigo glow, top-right — airy, not a dark banner */
 .lc-hero::before {
   content: '';
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(ellipse 120% 80% at 110% -10%, rgba(201,168,76,.12) 0%, transparent 50%),
-    radial-gradient(ellipse 80% 120% at -10% 110%, rgba(29,52,112,.6) 0%, transparent 55%),
-    radial-gradient(ellipse 60% 60% at 80% 80%, rgba(37,61,138,.4) 0%, transparent 50%);
+  background: radial-gradient(ellipse 90% 70% at 115% -20%, rgba(91,110,225,.10) 0%, transparent 55%);
   pointer-events: none;
 }
 
 /* Decorative circles */
-.lc-hero::after {
-  content: '';
-  position: absolute;
-  right: -80px;
-  top: -80px;
-  width: 400px;
-  height: 400px;
-  border-radius: 50%;
-  border: 1px solid rgba(201,168,76,.08);
-  pointer-events: none;
-}
+.lc-hero::after { content: none; }
 
 .lc-hero-inner {
   position: relative;
-  padding: 3.5rem 3rem 2.75rem;
+  padding: 3rem .25rem 1.5rem;
 }
 
-/* Gold top rule */
-.lc-hero-rule {
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, transparent 0%, var(--gold) 30%, var(--gold-2) 50%, var(--gold) 70%, transparent 100%);
-  opacity: .7;
-}
+.lc-hero-rule { display: none; }
 
 /* Circle decoration behind scales icon */
 .lc-hero-circle {
@@ -230,8 +224,9 @@ section[data-testid="stBottom"] > div {
   align-items: center;
   justify-content: center;
   font-size: 72px;
-  opacity: .15;
+  opacity: 0;
   pointer-events: none;
+  display: none;
 }
 
 .lc-eyebrow {
@@ -242,48 +237,48 @@ section[data-testid="stBottom"] > div {
   font-weight: 500;
   letter-spacing: .28em;
   text-transform: uppercase;
-  color: var(--gold);
-  opacity: .8;
+  color: var(--slate-2);
+  opacity: .9;
   margin-bottom: 1.1rem;
 }
 .lc-eyebrow-dot {
-  width: 5px; height: 5px;
+  width: 6px; height: 6px;
   border-radius: 50%;
-  background: var(--gold);
+  background: var(--indigo);
   animation: breathe 2.8s ease-in-out infinite;
 }
 .lc-eyebrow-line {
   width: 28px; height: 1px;
-  background: linear-gradient(90deg, var(--gold), transparent);
-  opacity: .5;
+  background: linear-gradient(90deg, var(--indigo), transparent);
+  opacity: .6;
 }
 
 .lc-title {
-  font-family: 'Playfair Display', Georgia, 'Times New Roman', serif;
-  font-size: clamp(36px, 5.5vw, 56px);
-  font-weight: 900;
-  color: #fff;
-  line-height: 1.05;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: clamp(34px, 5vw, 52px);
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.1;
   letter-spacing: -.025em;
-  margin-bottom: .15em;
+  margin-bottom: .1em;
 }
 .lc-title-em {
-  font-style: italic;
-  font-weight: 700;
-  color: rgba(255,255,255,.55);
+  font-style: normal;
+  font-weight: 600;
+  color: var(--indigo);
   display: block;
-  font-size: .9em;
-  letter-spacing: -.01em;
+  font-size: 1em;
+  letter-spacing: -.025em;
 }
 
 .lc-sub {
-  font-size: 13.5px;
-  font-weight: 300;
-  color: rgba(255,255,255,.42);
-  line-height: 1.8;
-  max-width: 430px;
-  margin: 1rem 0 1.75rem;
-  letter-spacing: .01em;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--slate-2);
+  line-height: 1.7;
+  max-width: 460px;
+  margin: 1rem 0 1.6rem;
+  letter-spacing: .005em;
 }
 
 /* Code badges in hero */
@@ -297,11 +292,11 @@ section[data-testid="stBottom"] > div {
   font-weight: 600;
   letter-spacing: .1em;
   text-transform: uppercase;
-  color: rgba(255,255,255,.5);
-  background: rgba(255,255,255,.06);
-  border: 1px solid rgba(255,255,255,.1);
+  color: var(--indigo-3);
+  background: var(--indigo-bg);
+  border: 1px solid var(--indigo-border);
   padding: 5px 12px;
-  border-radius: 3px;
+  border-radius: 999px;
   transition: all .2s var(--ease);
 }
 
@@ -404,11 +399,33 @@ section[data-testid="stBottom"] > div {
 }
 .stButton > button:hover {
   background: var(--parchment) !important;
-  border-color: var(--gold-border) !important;
-  border-left-color: var(--gold) !important;
+  border-color: var(--indigo-border) !important;
+  border-left-color: var(--indigo) !important;
   color: var(--navy) !important;
   transform: translateX(4px) !important;
   box-shadow: var(--s2) !important;
+}
+
+/* Primary CTA — indigo gradient pill (matches the AI-SaaS reference) */
+.stButton > button[kind="primary"],
+[data-testid="stBaseButton-primary"],
+button[data-testid="baseButton-primary"] {
+  background: var(--grad-indigo) !important;
+  color: #fff !important;
+  border: none !important;
+  border-left: none !important;
+  border-radius: 999px !important;
+  font-weight: 600 !important;
+  text-align: center !important;
+  box-shadow: 0 8px 22px rgba(79,91,213,.30) !important;
+}
+.stButton > button[kind="primary"]:hover,
+[data-testid="stBaseButton-primary"]:hover,
+button[data-testid="baseButton-primary"]:hover {
+  background: var(--grad-indigo) !important;
+  filter: brightness(1.06) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 12px 30px rgba(79,91,213,.40) !important;
 }
 
 /* ══ ALERTS ═════════════════════════════════════════════════════════════════ */
@@ -416,8 +433,8 @@ section[data-testid="stBottom"] > div {
   display: flex;
   gap: 12px;
   align-items: flex-start;
-  background: var(--gold-pale);
-  border-left: 3px solid var(--gold);
+  background: var(--indigo-bg);
+  border-left: 3px solid var(--indigo);
   border-radius: 0 8px 8px 0;
   padding: 14px 18px;
   margin-bottom: 1.5rem;
@@ -431,7 +448,7 @@ section[data-testid="stBottom"] > div {
   gap: 9px;
   align-items: flex-start;
   background: var(--amber-bg);
-  border-left: 3px solid var(--gold);
+  border-left: 3px solid var(--indigo);
   border-radius: 0 8px 8px 0;
   padding: 10px 15px;
   margin-bottom: 10px;
@@ -472,7 +489,7 @@ section[data-testid="stBottom"] > div {
 /* ══ RESTATEMENT + ANALYSIS (the dissection) ════════════════════════════════ */
 .lc-answer {
   background: linear-gradient(180deg, var(--white) 0%, var(--parchment) 140%);
-  border: 1px solid var(--gold-border); border-left: 4px solid var(--gold);
+  border: 1px solid var(--indigo-border); border-left: 4px solid var(--indigo);
   border-radius: 12px; padding: 16px 20px 17px; margin-bottom: 16px;
   box-shadow: var(--s1);
   animation: fadeUp .35s var(--ease) both;
@@ -538,7 +555,7 @@ ul.lc-req li::before {
   color: var(--green); font-weight: 700; font-size: 14px;
 }
 .lc-action {
-  background: var(--gold-pale); border: 1px solid var(--gold-border);
+  background: var(--indigo-bg); border: 1px solid var(--indigo-border);
   border-radius: 10px; padding: 15px 20px; margin-bottom: 18px;
   animation: fadeUp .35s var(--ease) both;
 }
@@ -549,7 +566,7 @@ ul.lc-action-list li {
 }
 ul.lc-action-list li::before {
   content: "→"; position: absolute; left: 0; top: 0;
-  color: var(--gold); font-weight: 700;
+  color: var(--indigo); font-weight: 700;
 }
 ul.lc-action-list li:last-child, ul.lc-req li:last-child { margin-bottom: 0; }
 
@@ -588,8 +605,8 @@ ul.lc-applies-list li:last-child { margin-bottom: 0; }
 }
 .lc-cite {
   font-size: 11px; font-weight: 600; letter-spacing: .02em;
-  color: var(--navy); background: var(--gold-pale);
-  border: 1px solid var(--gold-border); padding: 4px 11px; border-radius: 999px;
+  color: var(--navy); background: var(--indigo-bg);
+  border: 1px solid var(--indigo-border); padding: 4px 11px; border-radius: 999px;
 }
 
 /* Collapsible statutory text */
@@ -612,7 +629,7 @@ ul.lc-applies-list li:last-child { margin-bottom: 0; }
 .lc-auth-title { font-family: 'DM Sans', sans-serif; font-weight: 600; font-style: italic;
   color: var(--ink-soft, #5b6472); }
 blockquote.lc-auth-quote {
-  border-left: 3px solid var(--gold); background: var(--gold-pale);
+  border-left: 3px solid var(--indigo); background: var(--indigo-bg);
   border-radius: 0 8px 8px 0; margin: 0 0 6px; padding: 10px 14px;
   font-size: 13px; line-height: 1.7; color: var(--ink-2);
 }
@@ -626,12 +643,12 @@ blockquote.lc-auth-quote {
 /* ══ OLD ↔ NEW COMPARISON ═══════════════════════════════════════════════════ */
 .lc-cmp-headline {
   font-family: 'Playfair Display', serif; font-size: 16px; font-weight: 700;
-  color: var(--navy); background: var(--gold-pale); border: 1px solid var(--gold-border);
+  color: var(--navy); background: var(--indigo-bg); border: 1px solid var(--indigo-border);
   border-radius: 10px; padding: 13px 18px; margin-bottom: 18px; line-height: 1.5;
 }
 .lc-cmp-empty {
   font-size: 13.5px; line-height: 1.6; color: var(--slate-3);
-  background: var(--gold-pale); border: 1px solid var(--gold-border);
+  background: var(--indigo-bg); border: 1px solid var(--indigo-border);
   border-radius: 10px; padding: 13px 18px; margin-bottom: 14px;
 }
 .lc-cmp-topic {
@@ -659,7 +676,7 @@ blockquote.lc-auth-quote {
 .lc-cmp-card.new .lc-cmp-cite { color: var(--navy); }
 .lc-cmp-impact {
   font-size: 13px; line-height: 1.55; color: var(--ink-2);
-  background: var(--gold-pale); border-left: 3px solid var(--gold);
+  background: var(--indigo-bg); border-left: 3px solid var(--indigo);
   border-radius: 0 8px 8px 0; padding: 9px 14px; margin: 10px 0 22px;
 }
 .lc-cmp-impact span { color: var(--amber); font-weight: 700; }
@@ -756,13 +773,13 @@ blockquote.lc-auth-quote.unverified {
 
 /* Blockquote = statute text */
 [data-testid="stChatMessageContent"] blockquote {
-  border-left: 3px solid var(--gold) !important;
+  border-left: 3px solid var(--indigo) !important;
   margin: 1rem 0 !important;
   padding: 10px 0 10px 18px !important;
   color: var(--ink-2) !important;
   font-style: normal !important;
   font-size: 13.5px !important;
-  background: var(--gold-pale) !important;
+  background: var(--indigo-bg) !important;
   border-radius: 0 8px 8px 0 !important;
   line-height: 1.75 !important;
 }
