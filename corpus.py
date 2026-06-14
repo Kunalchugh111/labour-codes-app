@@ -442,7 +442,8 @@ _MIN_SCORE = 0.45      # floor on the length-normalised score
 _GATE_REL  = 0.8       # a code must reach this fraction of the best code's relevance…
 _GATE_REL_DEF = 0.5    # …relaxed for definitional queries (cross-code comparison is wanted)
 _GATE_ABS  = 1.5       # …and this absolute relevance, to be included (best code always kept)
-_SEM_ROUTE_GATE = 0.40 # non-lexical modes: also keep a code whose best sub-section cosine clears this
+_SEM_ROUTE_GATE = 0.40 # non-lexical modes: keep any code whose best sub-section cosine clears this
+_SEM_ROUTE_FLOOR = 0.25 # …and always the single best-semantic code above this floor (≤1 extra code)
 
 
 def _wlen(ch: dict) -> int:
@@ -752,14 +753,18 @@ def _kept_codes(corpus_dict: dict, query: str) -> set:
     if _CFG.use_code_anchors:
         kept |= {cid for cid in _anchored_codes(query)
                  if cid in corpus_dict and tops.get(cid, 0.0) >= _GATE_ABS}
-    # Semantic routing (non-lexical modes only): keep a Code whose best sub-section embedding is
-    # a strong match, so a paraphrase with no statutory keyword still reaches the right Code
-    # (e.g. "salary set aside for retirement" → Social Security). Lexical mode is untouched.
+    # Semantic routing (non-lexical modes only): so a paraphrase with no statutory keyword still
+    # reaches the right Code (e.g. "salary set aside for retirement" → Social Security). Keep any
+    # Code with a CONFIDENT sub-section match, plus the SINGLE best semantic match above a low
+    # floor (adds at most one Code, so an oblique paraphrase routes without over-routing on
+    # near-ties). Lexical mode is untouched.
     if _CFG.mode != "lexical" and _SEMANTIC_POOLED is not None:
-        for cid, e in corpus_dict.items():
-            if cid not in kept and max((_semantic_pooled_score(ch, query)
-                                        for ch in e["chunks"]), default=0.0) >= _SEM_ROUTE_GATE:
-                kept.add(cid)
+        sem = {cid: max((_semantic_pooled_score(ch, query) for ch in e["chunks"]), default=0.0)
+               for cid, e in corpus_dict.items()}
+        kept |= {cid for cid, s in sem.items() if s >= _SEM_ROUTE_GATE}
+        best = max(sem, key=sem.get, default=None)
+        if best is not None and sem[best] >= _SEM_ROUTE_FLOOR:
+            kept.add(best)
     return kept
 
 
