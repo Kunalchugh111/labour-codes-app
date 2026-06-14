@@ -442,6 +442,7 @@ _MIN_SCORE = 0.45      # floor on the length-normalised score
 _GATE_REL  = 0.8       # a code must reach this fraction of the best code's relevance…
 _GATE_REL_DEF = 0.5    # …relaxed for definitional queries (cross-code comparison is wanted)
 _GATE_ABS  = 1.5       # …and this absolute relevance, to be included (best code always kept)
+_SEM_ROUTE_GATE = 0.40 # non-lexical modes: also keep a code whose best sub-section cosine clears this
 
 
 def _wlen(ch: dict) -> int:
@@ -455,6 +456,11 @@ def _wlen(ch: dict) -> int:
 # Optional semantic-similarity hook, installed by embeddings.enable(); None ⇒ pure
 # keyword search. Signature: (chunk, query) -> cosine in roughly [0, 0.5].
 _SEMANTIC = None
+# Pooled variant (max over whole + sub-section vectors), also installed by embeddings.enable().
+# Used by the embeddings_primary / fusion modes and by semantic routing; lexical mode and the
+# routing _combined_score deliberately keep the plain whole-chunk _SEMANTIC, so lexical is
+# byte-identical regardless of multi-vector indexing.
+_SEMANTIC_POOLED = None
 # Weight on the semantic bonus. Titan cosines for a real topical match run ~0.1–0.3
 # while the length-normalised keyword score tops out near ~2–3, so this scale brings
 # a strong semantic hit to a comparable magnitude without letting it dominate an
@@ -474,8 +480,8 @@ class RetrievalConfig:
     mode: str = "lexical"            # lexical | embeddings_primary | fusion | rerank
     candidate_n: int = 30            # top-N candidates kept before fusion/rerank truncation
     semantic_weight: float = _SEMANTIC_WEIGHT   # lexical-mode cosine weight (today's 6.0)
-    rrf_k: int = 60                  # Reciprocal Rank Fusion constant (fusion mode)
-    embed_lex_weight: float = 0.15   # weight on lexical as a tie-breaker in embeddings_primary
+    rrf_k: int = 20                  # Reciprocal Rank Fusion constant (fusion mode)
+    embed_lex_weight: float = 0.05   # weight on lexical as a tie-breaker in embeddings_primary
     use_s2_penalty: bool = True      # §2 (definitions) ×0.5 noise penalty
     use_code_anchors: bool = True    # _CODE_ANCHORS force-keep in routing
     reserve_rules: bool = True       # reserve ≥2 slots for relevant Rules
@@ -518,8 +524,18 @@ def _lexical_score(ch: dict, terms: list[str]) -> float:
 
 
 def _semantic_score(ch: dict, query: str) -> float:
-    """Cosine(query, chunk) via the embeddings hook; 0.0 when no index is loaded."""
+    """Cosine(query, WHOLE chunk) via the embeddings hook; 0.0 when no index is loaded.
+    Used by lexical mode and routing — unaffected by multi-vector indexing."""
     return _SEMANTIC(ch, query) if (_SEMANTIC is not None and query) else 0.0
+
+
+def _semantic_pooled_score(ch: dict, query: str) -> float:
+    """Max-pooled semantic score (whole + sub-section vectors), so a paraphrase matching one
+    clause of a long Section scores on that clause. Falls back to the whole-chunk score when
+    multi-vector isn't installed. Used by the embeddings_primary / fusion modes."""
+    if _SEMANTIC_POOLED is not None and query:
+        return _SEMANTIC_POOLED(ch, query)
+    return _semantic_score(ch, query)
 
 
 def _structural_adjust(score: float, ch: dict, explicit: set[int], definitional: bool) -> float:
@@ -548,7 +564,7 @@ def _combined_score(ch: dict, terms: list[str], explicit: set[int], definitional
 def _score_chunk(ch: dict, terms: list[str], explicit: set[int], definitional: bool,
                  query: str = "") -> float:
     if _CFG.mode == "embeddings_primary":
-        base = _semantic_score(ch, query) + _CFG.embed_lex_weight * _lexical_score(ch, terms)
+        base = _semantic_pooled_score(ch, query) + _CFG.embed_lex_weight * _lexical_score(ch, terms)
         return _structural_adjust(base, ch, explicit, definitional)
     # lexical (default — byte-identical to history); fusion/rerank reuse this combined score as
     # their base candidate ranking and re-order it in `search` (see _score_list dispatch).
@@ -562,7 +578,7 @@ def _fusion_rank(chunks, terms, query, explicit, definitional):
     score so they keep dominating regardless of scale."""
     k = _CFG.rrf_k
     lex_order = sorted(chunks, key=lambda ch: _lexical_score(ch, terms), reverse=True)
-    sem_order = sorted(chunks, key=lambda ch: _semantic_score(ch, query), reverse=True)
+    sem_order = sorted(chunks, key=lambda ch: _semantic_pooled_score(ch, query), reverse=True)
     lex_rank = {id(ch): i for i, ch in enumerate(lex_order, 1)}
     sem_rank = {id(ch): i for i, ch in enumerate(sem_order, 1)}
     out = []
@@ -736,6 +752,14 @@ def _kept_codes(corpus_dict: dict, query: str) -> set:
     if _CFG.use_code_anchors:
         kept |= {cid for cid in _anchored_codes(query)
                  if cid in corpus_dict and tops.get(cid, 0.0) >= _GATE_ABS}
+    # Semantic routing (non-lexical modes only): keep a Code whose best sub-section embedding is
+    # a strong match, so a paraphrase with no statutory keyword still reaches the right Code
+    # (e.g. "salary set aside for retirement" → Social Security). Lexical mode is untouched.
+    if _CFG.mode != "lexical" and _SEMANTIC_POOLED is not None:
+        for cid, e in corpus_dict.items():
+            if cid not in kept and max((_semantic_pooled_score(ch, query)
+                                        for ch in e["chunks"]), default=0.0) >= _SEM_ROUTE_GATE:
+                kept.add(cid)
     return kept
 
 
