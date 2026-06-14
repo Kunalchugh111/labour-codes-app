@@ -1,6 +1,6 @@
 """
 app.py — Labour Codes Assistant (Streamlit)
-Backend : AWS Bedrock (Converse API) — amazon.nova-pro-v1:0
+Backend : AWS Bedrock (Converse API) — mistral.mistral-large-3-675b-instruct
 Auth    : AWS_BEARER_TOKEN_BEDROCK + AWS_REGION in Streamlit secrets
 Design  : Legal editorial — deep navy, parchment, gold accent
 """
@@ -15,9 +15,10 @@ import streamlit as st
 import corpus
 import intake
 
-# Amazon Nova Pro — first-party model, no AWS Marketplace subscription required.
-# Override with the BEDROCK_MODEL_ID secret to use a different Bedrock model.
-MODEL_ID = "amazon.nova-pro-v1:0"
+# Mistral Large 3 — strongest model invokable on this account (Claude is blocked by an AWS
+# Marketplace payment issue; Nova Pro flips borderline numeric verdicts). Gives more complete,
+# accurate, appropriately-caveated legal answers. Override via the BEDROCK_MODEL_ID secret.
+MODEL_ID = "mistral.mistral-large-3-675b-instruct"
 
 st.set_page_config(
     page_title="Labour Codes Assistant",

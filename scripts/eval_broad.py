@@ -274,12 +274,17 @@ def score(app, code, cat, numeric, q, d, expected=None):
     if ungrounded:
         r["fails"].append("quote_ungrounded"); r["ungrounded"] = ungrounded
 
-    # hedged (informational flag, not always a failure — but a "tricky" out-of-scope SHOULD hedge)
+    # An out-of-scope ("tricky") question SHOULD refuse. For every other question a caveat
+    # ("set by notification", "not in the supplied text") inside an otherwise-substantive answer
+    # is RECORDED but is NOT a failure — penalising it wrongly marked thorough, correct answers
+    # (e.g. "minimum bonus is 8.33% … whichever is higher") as bad. A genuine non-answer is
+    # already caught by has_answer (empty lead) and numeric_missing (a figure question with no
+    # number), so "hedged" here is informational only.
     if cat == "tricky":
         if not hedged:
             r["fails"].append("should_have_hedged")
     elif hedged:
-        r["fails"].append("hedged")
+        r["hedged_note"] = True
 
     # wrong_value — for a formula with a known ground-truth value, the answer must contain
     # one of the accepted forms (digit or word). Catches a confidently-wrong number
@@ -331,8 +336,8 @@ def main():
 
     # scorecard
     n = len(rows)
-    checks = ["has_answer", "numeric_missing", "stale_citation", "cite_unresolved",
-              "quote_ungrounded", "hedged", "should_have_hedged", "error"]
+    checks = ["has_answer", "numeric_missing", "wrong_value", "stale_citation", "cite_unresolved",
+              "quote_ungrounded", "should_have_hedged", "error"]
     counts = {c: sum(1 for r in rows if c in r["fails"]) for c in checks}
     passed = sum(1 for r in rows if r["ok"])
     print("\n=== BROAD EVAL: %d scenarios ===" % n)
@@ -341,6 +346,8 @@ def main():
     for c in checks:
         if counts[c]:
             print("  %-18s %d" % (c, counts[c]))
+    info_hedged = sum(1 for r in rows if r.get("hedged_note"))
+    print("  (info) caveated     %d   [answers with a 'set by notification'-style caveat; not a failure]" % info_hedged)
     print("\nBy code (clean / total):")
     for code in ["wages", "ss", "ir", "osh"]:
         cr = [r for r in rows if r["code"] == code]
