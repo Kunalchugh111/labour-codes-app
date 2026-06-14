@@ -1397,6 +1397,40 @@ def _amount_notes(query: str) -> list:
                 f"₹{wage:,} ÷ 26 × 15 × {eff} = ₹{comp:,} for {yrs}. If notice is paid in lieu, "
                 f"total cash ≈ ₹{wage + comp:,}. (Average-pay divisor not fixed by the Code; "
                 f"shown on the 26-day basis.)"))
+
+    # Lay-off compensation — §67: 50% of (basic wages + DA) for each day laid off. Fires only
+    # on an explicit "laid off for N days" + a monthly wage. The day-divisor and the basic+DA
+    # split aren't fixed by the Code, so we use total monthly wage on the 26-day basis and say so.
+    wm = re.search(_WAGE_RE[0], ql) or re.search(_WAGE_RE[1], ql)
+    if wm and re.search(r"lay[\s-]?off|laid[\s-]?off", ql):
+        dm = (re.search(r"la(?:y|id)[\s-]?off\b.{0,40}?(\d{1,3})\s*days?", ql)
+              or re.search(r"(\d{1,3})\s*days?.{0,40}?la(?:y|id)[\s-]?off", ql))
+        if dm:
+            days = int(dm.group(1)); wage = int(wm.group(1))
+            if 1 <= days <= 365 and wage >= 1000:
+                comp = round(0.5 * (wage / 26) * days)
+                notes.append(("LAY-OFF COMPENSATION",
+                    f"Per §67 of the Industrial Relations Code, a laid-off worker is paid 50% of "
+                    f"(basic wages + dearness allowance) for each day of lay-off (bar weekly "
+                    f"holidays). Taking ₹{wage:,}/month as the wage base on the 26-day method: "
+                    f"50% × (₹{wage:,} ÷ 26) × {days} days = ₹{comp:,}. (Treats monthly wage as "
+                    f"basic+DA on the 26-day basis; neither is fixed by the Code.)"))
+
+    # Overtime — Code on Wages §14 / OSH §27: twice the normal rate. Fires only on explicit
+    # "N hours of overtime" + a monthly wage (NOT "worked N hours a day"). Normal hourly rate
+    # taken as monthly ÷ (26 days × 8 hours) — a stated convention, not fixed by the Code.
+    if wm and re.search(r"over[\s-]?time", ql):
+        hm = (re.search(r"(\d{1,3})\s*(?:hours?|hrs?)\s*(?:of\s+)?(?:over[\s-]?time)", ql)
+              or re.search(r"over[\s-]?time\s*(?:of\s+|work\s+of\s+)?(\d{1,3})\s*(?:hours?|hrs?)", ql))
+        if hm:
+            hours = int(hm.group(1)); wage = int(wm.group(1))
+            if 1 <= hours <= 300 and wage >= 1000:
+                ot = round(2 * (wage / (26 * 8)) * hours)
+                notes.append(("OVERTIME PAY",
+                    f"Per §14 of the Code on Wages (and §27 OSH), overtime is paid at twice the "
+                    f"normal rate of wages. Taking the normal hourly rate as monthly ÷ (26 days × "
+                    f"8 hours): 2 × (₹{wage:,} ÷ 208) × {hours} hours = ₹{ot:,}. (The 26×8 hourly "
+                    f"basis is a convention, not fixed by the Code.)"))
     return notes
 
 
