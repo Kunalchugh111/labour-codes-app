@@ -1318,6 +1318,36 @@ def _excluded_ir_sections(topic: str, got: dict) -> set:
     sub300 = ("fewer than 50" in size) or ("50 to 299" in size)
     return _CHAPTER_X_EXCL.get(topic, set()) if sub300 else set()
 
+_GRAT_WAGE_RE = (r"(?:rs\.?|inr|₹)?\s*(\d{3,})\s*(?:/?\s*(?:per\s+)?month|/month|monthly|a month|p\.?m\b)",
+                 r"(?:drawing|earning|salary(?:\s+of)?|wages?\s+of|last\s+drawn(?:\s+wages?)?(?:\s+of)?)"
+                 r"\s*(?:rs\.?|inr|₹)?\s*(\d{3,})")
+
+def gratuity_estimate(query: str):
+    """Deterministic gratuity figure for a monthly-rated employee — Code on Social Security
+    §53(2): (monthly wages ÷ 26) × 15 per completed year, a part-year over six months
+    counting as a full year. Returns a dict with the working, or None when the query is not
+    a gratuity question or lacks a clean tenure + monthly wage. LLMs do this arithmetic
+    unreliably (they drop the ÷26 factor), so we compute it in code and hand over the figure."""
+    ql = query.lower().replace(",", "")
+    if "gratuit" not in ql:
+        return None
+    ym = re.search(r"(\d{1,2})\s*(?:completed\s+)?(?:years?|yrs?)\b", ql)
+    if not ym:
+        return None
+    years = int(ym.group(1))
+    mm = re.search(r"(\d{1,2})\s*months?\b", ql)
+    months = int(mm.group(1)) if mm else 0
+    wm = re.search(_GRAT_WAGE_RE[0], ql) or re.search(_GRAT_WAGE_RE[1], ql)
+    if not wm:
+        return None
+    wage = int(wm.group(1))
+    if wage < 1000 or not (1 <= years <= 60):
+        return None
+    eff = years + (1 if months > 6 else 0)
+    return {"years": years, "months": months, "eff": eff, "wage": wage,
+            "amount": round(wage / 26 * 15 * eff)}
+
+
 def build_prompt(query: str, all_results: dict, applicability=None) -> str:
     grounding = corpus.render_all_results(all_results, query)
     no_prov   = [r["meta"]["short"] for r in all_results.values() if not r["found"]]
@@ -1346,6 +1376,18 @@ def build_prompt(query: str, all_results: dict, applicability=None) -> str:
             "This describes a PLANNED/PROPOSED action, not a completed one. Set \"verdict.status\" "
             "to \"partial\" and put the steps needed to comply in \"actions\"; do not label a "
             "not-yet-taken action \"non-compliant\".")
+    g = gratuity_estimate(query)
+    if g:
+        # The model computes gratuity unreliably (it drops the ÷26 factor). Give it the figure,
+        # computed in code from §53(2), so it states the correct amount instead of inventing one.
+        yrs = f"{g['years']} years" + (f" {g['months']} months" if g['months'] else "")
+        parts.append(
+            "=== GRATUITY CALCULATION (use this exact figure; do NOT recompute) ===\n"
+            f"Per §53(2) of the Code on Social Security, for a monthly-rated employee gratuity = "
+            f"(monthly wages ÷ 26) × 15 for each completed year, a part-year over six months "
+            f"counting as a full year. For ₹{g['wage']:,}/month and {yrs} (= {g['eff']} years): "
+            f"₹{g['wage']:,} ÷ 26 × 15 × {g['eff']} = ₹{g['amount']:,}. State this figure, noting it "
+            f"is subject to any ceiling notified by the Central Government.")
     parts.append(f"=== QUESTION ===\n{query}")
     return "\n\n".join(parts)
 
