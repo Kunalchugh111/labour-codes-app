@@ -1157,10 +1157,11 @@ def _parse_answer(text: str) -> dict:
 
 
 def _converse_json(system: str, user_text: str,
-                   max_tokens: int = 8192, temperature: float = 0.25) -> dict:
+                   max_tokens: int = 8192, temperature: float = 0.0) -> dict:
     """Single non-streaming Converse call returning parsed JSON (or a raw-text fallback).
-    Headroom (8192 tokens) lets the model reason through several issues without truncation;
-    a slightly warmer temperature (0.25) reads less robotic while staying accurate for law."""
+    Headroom (8192 tokens) lets the model reason through several issues without truncation.
+    Temperature 0.0: this is a legal tool — the same question should give the same answer; a
+    warmer setting (was 0.25) made verdicts and citations drift between identical runs."""
     client = get_bedrock_client()
     if not client:
         return {"_raw": "⚠️ Bedrock client error. Check secrets."}
