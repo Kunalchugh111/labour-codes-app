@@ -996,9 +996,16 @@ JSON shape:
 }
 
 Field rules:
-- ALWAYS fill "restatement" and "analysis". "analysis" is the heart of the answer: 1-4 issues, each
-  spotting one legal question, naming the governing provision, and APPLYING it to the manager's
-  facts (not a generic summary). Order issues from most to least important.
+- ALWAYS fill "restatement" and "analysis". "analysis" is the heart of the answer: surface EVERY
+  distinct legal point the situation raises — as many issues as it genuinely needs (a simple lookup
+  may be 1-2; a real compliance or procedural scenario is often 3-7+). Each issue spots one legal
+  question, names exactly ONE governing provision, and APPLIES it to the manager's facts (not a
+  generic summary). Order issues from most to least important.
+- BE COMPREHENSIVE — this is a professional reference tool. Cite EVERY relevant provision across all
+  applicable Codes: each governing Section AND each Central Rule that prescribes its procedure, form,
+  register, timeline or rate, each as its OWN issue + authority. Do not stop at the single most
+  obvious Section; an HR manager needs the full picture (e.g. a closure may involve §77 applicability,
+  §79/§80 permission, §70 compensation, plus the Rules that prescribe the forms and notices).
 - type "compliance": fill "verdict"; each issue "status" is "ok" (the stated facts satisfy the
   provision) / "risk" (the provision applies but the stated facts do NOT show whether it was met —
   open/conditional) / "violation" (the stated facts AFFIRMATIVELY show it was NOT met); fill
