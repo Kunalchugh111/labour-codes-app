@@ -242,7 +242,37 @@ def _scrub_chunks(chunks: list[dict]) -> None:
         ch["text"], ch["preview"] = txt, _preview(txt)
 
 
+_AMEND_LIST_RE = re.compile(r"LIST OF AMENDING ACTS", re.I)
+_ENACT_RE = re.compile(r"BE\s+it\s+enacted\b[^\n]*", re.I)
+# A gazette amendment-footnote LINE: starts with "N." and carries amendment/citation language
+# ("Subs. by", "Ins. by", "omitted by Act …", "(w.e.f. …)"). These blocks sit at page
+# boundaries and their numbers continue the real section sequence, so _split_numbered's
+# small-gap rule otherwise accepts them as Sections (EPF §3–§6 were such footnotes). Real
+# section headings ("1. Short title, extent and application.—") carry none of these tokens.
+_FOOTNOTE_RE = re.compile(
+    r"(?m)^\s*\d{1,3}\.\s+.*\b(?:Subs\.|Ins\.|ibid|w\.e\.f\.|by Act\s+\d|by Reg\.|"
+    r"omitted|substituted|inserted|re-lettered|re-numbered|The words|The proviso|"
+    r"The figures|The brackets|The Explanation|s\.\s*\d+,\s*for).*$")
+
+
+def _strip_preamble(text: str) -> str:
+    """Old-Act gazette texts (built by scripts/build_old_acts.py) carry front matter — a title
+    page, a numbered 'LIST OF AMENDING ACTS', abbreviations, and an 'ARRANGEMENT OF SECTIONS'
+    table of contents — before the enacting clause, and amendment FOOTNOTES interleaved through
+    the body. `_split_numbered` otherwise latches onto both as Sections 1..N (EPF 1952's §1–15
+    were amendment entries and §3–§6 were footnotes, burying the real §6 contribution rate).
+    When the tell-tale 'LIST OF AMENDING ACTS' is present, drop everything up to the enacting
+    clause and strip the footnote lines so parsing starts at — and tracks — the real Sections.
+    Scoped to that marker (EPF + Industrial Disputes only), so all other docs are untouched."""
+    if not _AMEND_LIST_RE.search(text):
+        return text
+    m = _ENACT_RE.search(text)
+    body = text[m.end():] if m else text
+    return _FOOTNOTE_RE.sub("", body)
+
+
 def parse_doc(text, kind, titles=None):
+    text = _strip_preamble(text)
     label = "Section" if kind == "code" else "Rule"
     sched_match = re.search(r"THE\s+[A-Z]+\s+SCHEDULE", text)
     body = text[: sched_match.start()] if sched_match else text
