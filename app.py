@@ -449,10 +449,12 @@ section[data-testid="stBottom"] > div {
   align-items: flex-start;
   gap: 14px;
   padding: 18px 22px;
-  border-radius: 10px;
+  border-radius: 12px;
   margin-bottom: 18px;
-  border: 1.5px solid;
-  animation: fadeUp .3s var(--ease) both;
+  border: 1px solid;
+  border-left-width: 4px;
+  box-shadow: var(--s1);
+  animation: fadeUp .35s var(--ease) both;
 }
 .lc-verdict-icon { font-size: 28px; flex-shrink: 0; line-height: 1; }
 .lc-verdict-meta { flex: 1; }
@@ -469,16 +471,21 @@ section[data-testid="stBottom"] > div {
 
 /* ══ RESTATEMENT + ANALYSIS (the dissection) ════════════════════════════════ */
 .lc-answer {
-  background: var(--blue-bg, #eff6ff); border: 1px solid var(--blue-b, #bfdbfe);
-  border-radius: 10px; padding: 14px 18px; margin-bottom: 14px;
-  animation: fadeUp .3s var(--ease) both;
+  background: linear-gradient(180deg, var(--white) 0%, var(--parchment) 140%);
+  border: 1px solid var(--gold-border); border-left: 4px solid var(--gold);
+  border-radius: 12px; padding: 16px 20px 17px; margin-bottom: 16px;
+  box-shadow: var(--s1);
+  animation: fadeUp .35s var(--ease) both;
 }
 .lc-answer-label {
-  font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
-  color: var(--blue, #2563eb); margin-bottom: 5px;
+  font-size: 10px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--slate-2); margin-bottom: 7px;
 }
-.lc-answer-text { font-size: 16px; font-weight: 600; line-height: 1.5; color: var(--ink, #0f172a); }
-.lc-answer-cite { font-size: 12.5px; font-weight: 600; color: var(--slate-3, #64748b); margin-top: 7px; }
+.lc-answer-text { font-size: 16.5px; font-weight: 600; line-height: 1.55; color: var(--navy); }
+.lc-answer-cite {
+  font-family: 'Playfair Display', serif; font-style: italic;
+  font-size: 13px; font-weight: 600; color: var(--slate-2); margin-top: 9px;
+}
 .lc-restate {
   font-size: 12.5px; line-height: 1.55; color: var(--slate-3); font-style: italic;
   margin: 0 0 14px; padding-left: 12px; border-left: 2px solid var(--slate-5);
