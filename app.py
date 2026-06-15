@@ -920,6 +920,13 @@ def _enable_semantic():
 
 SEMANTIC_ON = _enable_semantic()
 
+# Embeddings-first retrieval: when the semantic index is available, rank by the max-pooled
+# sub-section embeddings (paraphrase-robust — benchmarked clearly above keyword and reranker on
+# hard paraphrase/deep-clause queries). Fall back to keyword search when no index/key is present,
+# so the app stays robust offline. Overridable via the RETRIEVAL_MODE env var.
+corpus.set_config(corpus.RetrievalConfig(
+    mode=os.environ.get("RETRIEVAL_MODE", "embeddings_primary" if SEMANTIC_ON else "lexical")))
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Bedrock client
