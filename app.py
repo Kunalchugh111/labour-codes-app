@@ -1196,34 +1196,39 @@ RULES:
 # Streaming
 # ─────────────────────────────────────────────────────────────────────────────
 def _friendly_bedrock_error(e: Exception) -> str:
-    """Turn raw AWS errors into clear, actionable guidance for the operator."""
+    """Turn raw AWS errors into clear, actionable guidance for the operator — always surfacing the
+    real reason (the underlying message is appended) so account-gating is never masked."""
     msg = str(e)
     low = msg.lower()
+    tail = f"\n\n_Details: {msg[:200]}_"
+    if "use case" in low and ("submit" in low or "not been submitted" in low):
+        return (
+            "\n\n⚠️ **This model needs a one-time use-case submission on your AWS account.**\n"
+            "In **AWS Console → Bedrock → Model access**, enable the model and submit the provider's "
+            "use-case details form (Anthropic Claude and some others require this), then retry." + tail
+        )
     if ("payment" in low or "marketplace subscription" in low
             or "invalid_payment_instrument" in low):
         return (
-            "\n\n⚠️ **AWS billing isn't active for this account yet.**\n"
-            "Add a valid card in **AWS Console → Billing → Payment preferences** (some cards "
-            "need a small verification charge to clear), wait ~2 minutes, and try again. "
-            "Amazon Nova is a first-party model and needs no Marketplace subscription, so once "
-            "billing is valid it should work."
+            "\n\n⚠️ **This model needs an active AWS Marketplace subscription / valid billing.**\n"
+            "In **AWS Console → Bedrock → Model access**, subscribe to the model (Cohere and other "
+            "third-party models are sold via Marketplace and need a valid payment instrument), wait "
+            "~2 minutes, and retry. First-party models (Amazon Titan, Mistral) need no subscription." + tail
         )
     if ("model identifier is invalid" in low or "resourcenotfound" in low
             or "is not supported" in low or "isn't supported" in low
             or "don't have access to the model" in low
             or "do not have access to the model" in low):
         return (
-            "\n\n⚠️ **The model isn't available in this AWS region.** Amazon Nova Pro is not "
-            "offered everywhere (e.g. not in Mumbai `ap-south-1`). Set the **`AWS_REGION`** "
-            "secret to a supported region such as `us-east-1` or `ap-southeast-3` (Jakarta) — "
-            "or set **`BEDROCK_MODEL_ID`** to a model your region supports."
+            "\n\n⚠️ **The configured model isn't available to this account/region.**\n"
+            "Check **`BEDROCK_MODEL_ID`** and set **`AWS_REGION`** to a region that serves it "
+            "(e.g. `us-east-1`), and enable it under **Bedrock → Model access**." + tail
         )
     if ("accessdenied" in low or "not authorized" in low
             or "could not be validated" in low):
         return (
-            "\n\n⚠️ **AWS denied access.** Confirm `AWS_BEARER_TOKEN_BEDROCK` is valid and that "
-            "its identity has the `bedrock:InvokeModel` permission, and that `AWS_REGION` is a "
-            "region where the model is available."
+            "\n\n⚠️ **AWS denied access.** Confirm `AWS_BEARER_TOKEN_BEDROCK` is valid with the "
+            "`bedrock:InvokeModel` permission, and that the model is enabled in your region." + tail
         )
     return f"\n\n⚠️ Error contacting the model: {msg}"
 
