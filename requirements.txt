@@ -1,4 +1,8 @@
-streamlit==1.40.2
+# Streamlit Cloud now provisions Python 3.14, which streamlit 1.40.2 (and its 2024 deps) can't run.
+# Keep the exact tested stack on Python <=3.13; only let 3.14+ resolve a newer, compatible Streamlit.
+streamlit==1.40.2; python_version < "3.14"
+streamlit>=1.40; python_version >= "3.14"
 requests==2.32.3
 pymupdf==1.27.2.3
 boto3
+numpy
