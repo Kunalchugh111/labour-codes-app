@@ -929,8 +929,15 @@ SEMANTIC_ON = _enable_semantic()
 # sub-section embeddings (paraphrase-robust — benchmarked clearly above keyword and reranker on
 # hard paraphrase/deep-clause queries). Fall back to keyword search when no index/key is present,
 # so the app stays robust offline. Overridable via the RETRIEVAL_MODE env var.
-corpus.set_config(corpus.RetrievalConfig(
-    mode=os.environ.get("RETRIEVAL_MODE", "embeddings_primary" if SEMANTIC_ON else "lexical")))
+_RMODE = os.environ.get("RETRIEVAL_MODE", "embeddings_primary" if SEMANTIC_ON else "lexical")
+# In the embeddings-first modes, retire the two keyword "crutches" the embedding ranker makes
+# redundant and can mis-rank against — the §2 definitions ×0.5 penalty and the forced Rules-slot
+# reservation (benchmarked neutral on the hard + saturated sets). Keep the purely-additive
+# _CODE_ANCHORS routing net. Lexical mode (the fallback) keeps all crutches as its ranking aids.
+if _RMODE == "lexical":
+    corpus.set_config(corpus.RetrievalConfig(mode="lexical"))
+else:
+    corpus.set_config(corpus.RetrievalConfig(mode=_RMODE, use_s2_penalty=False, reserve_rules=False))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
