@@ -165,7 +165,11 @@ def _build_index(corpus_dict: dict, save: bool = True):
     if INDEX_PATH.exists():
         try:
             data = np.load(INDEX_PATH, allow_pickle=True)
-            cached = {k: data["vecs"][i] for i, k in enumerate(data["keys"])}
+            # Read the arrays once: data["vecs"][i] would re-decompress the whole array on every
+            # iteration and each row view pins that full copy alive → ~1.8k× blowup → OOM on the
+            # cloud. Hoisting the two reads out of the comprehension keeps it to ~tens of MB.
+            vecs, keys = data["vecs"], data["keys"]
+            cached = {k: vecs[i] for i, k in enumerate(keys)}
         except Exception:
             cached = {}
 
@@ -201,7 +205,11 @@ def _load_index(corpus_dict: dict) -> int:
         return 0
     try:
         data = np.load(INDEX_PATH, allow_pickle=True)
-        cached = {k: data["vecs"][i] for i, k in enumerate(data["keys"])}
+        # Read the arrays once: data["vecs"][i] would re-decompress the whole array on every
+        # iteration and each row view pins that full copy alive → ~1.8k× blowup → OOM on the
+        # cloud. Hoisting the two reads out of the comprehension keeps it to ~tens of MB.
+        vecs, keys = data["vecs"], data["keys"]
+        cached = {k: vecs[i] for i, k in enumerate(keys)}
     except Exception:
         return 0
     chunks = [ch for e in corpus_dict.values() for ch in e["chunks"]]
