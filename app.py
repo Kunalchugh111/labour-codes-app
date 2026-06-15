@@ -610,6 +610,7 @@ ul.lc-applies-list li:last-child { margin-bottom: 0; }
   font-size: 11px; font-weight: 600; letter-spacing: .02em;
   color: var(--navy); background: var(--indigo-bg);
   border: 1px solid var(--indigo-border); padding: 4px 11px; border-radius: 999px;
+  white-space: nowrap; flex: 0 0 auto;
 }
 
 /* Collapsible statutory text */
@@ -856,6 +857,8 @@ blockquote.lc-auth-quote.unverified {
   background: var(--navy);
   padding: 4px 11px;
   border-radius: 4px;
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
 .lc-none-chip {
   font-size: 10px;
@@ -865,6 +868,8 @@ blockquote.lc-auth-quote.unverified {
   padding: 4px 11px;
   border-radius: 4px;
   font-style: italic;
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 /* ══ SPINNER ════════════════════════════════════════════════════════════════ */
@@ -1603,7 +1608,13 @@ def _esc(x) -> str:
     return html.escape(str(x if x is not None else ""))
 
 def _esc_ml(x) -> str:
-    return _esc(x).replace("\n", "<br>")
+    # Statute text carries PDF line-wrap newlines (~one every 76 chars, mid-sentence). A hard <br>
+    # per line breaks sentences and renders ragged/"vertical" in narrow containers, so reflow:
+    # split on blank-line paragraph breaks, collapse each paragraph's wrapped lines to spaces,
+    # and rejoin paragraphs with a single <br> (the browser then wraps to the available width).
+    paras = re.split(r"\n[ \t]*\n+", _esc(x))
+    paras = [re.sub(r"\s*\n\s*", " ", para).strip() for para in paras]
+    return "<br>".join(para for para in paras if para)
 
 def _clean_citation(c: str) -> str:
     """Tidy a citation for the answer sub-line: drop the [ ] some Code names carry."""
