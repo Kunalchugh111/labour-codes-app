@@ -161,7 +161,7 @@ def main():
     scen = generate(n)
     print("Running %d scenarios (%d base x phrasings), %d workers…" % (len(scen), len(BASE), workers))
 
-    def _has_value(d):
+    def _has_value(d, expected):
         # at temperature 0 a genuinely-wrong answer is stable, so retrying only recovers
         # transient throttle-degraded partials (number dropped); it cannot turn wrong -> right
         if not expected:
@@ -177,7 +177,7 @@ def main():
         for attempt in range(4):
             try:
                 d = H._answer(app, intake, q)
-                if d.get("type") and _has_value(d):
+                if d.get("type") and _has_value(d, expected):
                     break
             except Exception as e:
                 d = {"_err": str(e)[:120]}
