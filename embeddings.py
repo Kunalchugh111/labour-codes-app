@@ -29,10 +29,16 @@ from functools import lru_cache
 from pathlib import Path
 
 ROOT = Path(__file__).parent
-INDEX_PATH = ROOT / "documents" / "processed" / "embeddings.npz"
 MODEL_ID = os.environ.get("BEDROCK_EMBED_MODEL", "amazon.titan-embed-text-v2:0")
-_MAX_INPUT_CHARS = 28000          # Titan v2 input ceiling (~8192 tokens)
-_DIM = 1024                        # Titan v2 embedding dimension
+_IS_COHERE = MODEL_ID.startswith("cohere.embed")
+# Per-model index file so switching embedding models never mixes vectors of different models
+# (the chunk key is text-hash only). Titan keeps the canonical shipped name; others are suffixed.
+_SLUG = re.sub(r"[^a-z0-9]+", "-", MODEL_ID.lower()).strip("-")
+INDEX_PATH = (ROOT / "documents" / "processed" /
+              ("embeddings.npz" if MODEL_ID == "amazon.titan-embed-text-v2:0"
+               else f"embeddings.{_SLUG}.npz"))
+_MAX_INPUT_CHARS = 2000 if _IS_COHERE else 28000   # Cohere embed-v3 ~512-token cap; Titan ~8192
+_DIM = 1024                        # both Titan v2 and Cohere embed-v3 default to 1024
 
 # Multi-vector granularity: a long Section's single vector is "diluted" (one 1024-d point
 # for 3k+ chars), so a paraphrase matching ONE sub-clause scores low. For chunks above this
@@ -60,9 +66,16 @@ def _client():
     return c
 
 
-def _embed_one(text: str):
-    """Return a Titan embedding (list[float]) for one text, or None on failure."""
+def _embed_one(text: str, input_type: str = "search_document"):
+    """Return an embedding (list[float]) for one text, or None on failure. Cohere embed-v3 uses
+    asymmetric input types (search_document for chunks, search_query for the query — the key RAG
+    advantage); Titan has no such notion and ignores input_type."""
     try:
+        if _IS_COHERE:
+            r = _client().invoke_model(
+                modelId=MODEL_ID,
+                body=json.dumps({"texts": [text[:_MAX_INPUT_CHARS]], "input_type": input_type}))
+            return json.loads(r["body"].read())["embeddings"][0]
         r = _client().invoke_model(
             modelId=MODEL_ID,
             body=json.dumps({"inputText": text[:_MAX_INPUT_CHARS]}))
@@ -105,7 +118,7 @@ def _segments(ch: dict) -> list[str]:
 @lru_cache(maxsize=512)
 def embed_query(query: str):
     import numpy as np
-    v = _embed_one(query)
+    v = _embed_one(query, input_type="search_query")
     return None if v is None else np.asarray(v, dtype="float32")
 
 

@@ -2,3 +2,5 @@ __pycache__/
 *.py[cod]
 *$py.class
 .streamlit/secrets.toml
+# Per-model embedding indexes are experiment artifacts; only the canonical embeddings.npz is tracked
+documents/processed/embeddings.*.npz
