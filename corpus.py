@@ -256,23 +256,26 @@ _FOOTNOTE_RE = re.compile(
 
 
 def _strip_preamble(text: str) -> str:
-    """Old-Act gazette texts (built by scripts/build_old_acts.py) carry front matter — a title
-    page, a numbered 'LIST OF AMENDING ACTS', abbreviations, and an 'ARRANGEMENT OF SECTIONS'
-    table of contents — before the enacting clause, and amendment FOOTNOTES interleaved through
-    the body. `_split_numbered` otherwise latches onto both as Sections 1..N (EPF 1952's §1–15
-    were amendment entries and §3–§6 were footnotes, burying the real §6 contribution rate).
-    When the tell-tale 'LIST OF AMENDING ACTS' is present, drop everything up to the enacting
-    clause and strip the footnote lines so parsing starts at — and tracks — the real Sections.
-    Scoped to that marker (EPF + Industrial Disputes only), so all other docs are untouched."""
+    """Cut an old-Act gazette's front matter (title page, numbered 'LIST OF AMENDING ACTS',
+    abbreviations, 'ARRANGEMENT OF SECTIONS' TOC) by jumping to the enacting clause — so
+    `_split_numbered` doesn't read those numbered lines as Sections 1..N (EPF 1952's §1–15 were
+    amendment-list entries). Scoped to the 'LIST OF AMENDING ACTS' marker (EPF, Industrial
+    Disputes); returns the text unchanged otherwise."""
     if not _AMEND_LIST_RE.search(text):
         return text
     m = _ENACT_RE.search(text)
-    body = text[m.end():] if m else text
-    return _FOOTNOTE_RE.sub("", body)
+    return text[m.end():] if m else text
 
 
-def parse_doc(text, kind, titles=None):
-    text = _strip_preamble(text)
+def parse_doc(text, kind, titles=None, is_old=False):
+    # Old repealed-Act gazette texts carry amendment FOOTNOTES interleaved through the body
+    # ('N. Subs./Ins. by Act … (w.e.f. …)', 'The words … omitted'); their numbers continue the
+    # section sequence, so _split_numbered otherwise mis-reads them as Sections (and prefixes real
+    # titles with footnote text). Strip them — and the amending-acts preamble — for OLD Acts only.
+    # The 2020 Codes/Rules are clean and stay byte-identical (they feed the embedding index); old
+    # Acts are never embedded, so this needs no index rebuild.
+    if is_old:
+        text = _FOOTNOTE_RE.sub("", _strip_preamble(text))
     label = "Section" if kind == "code" else "Rule"
     sched_match = re.search(r"THE\s+[A-Z]+\s+SCHEDULE", text)
     body = text[: sched_match.start()] if sched_match else text
@@ -335,7 +338,7 @@ def load_corpus():
             txt = _read(oa["file"])
             if not txt:
                 continue
-            chunks = parse_doc(txt, "code")
+            chunks = parse_doc(txt, "code", is_old=True)
             for ch in chunks:
                 ch["source"] = oa["title"]
             if chunks:
