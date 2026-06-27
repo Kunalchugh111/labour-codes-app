@@ -126,6 +126,12 @@ def embed_query(query: str):
     """Embed a search query, cached. A transient embed failure (None — a throttle or network
     blip) is NOT kept in the cache, so one unlucky call can't permanently demote a query to
     keyword-only retrieval for the life of the process; the next attempt re-embeds it."""
+    if not _has_key():
+        # No credentials → keyword-only retrieval. Without this guard, a prebuilt index loaded
+        # from disk still installs the semantic hook, so every query would block on a doomed
+        # Bedrock call's connect/read timeouts (a hang in the app when the key is missing/expired,
+        # and in the keyless lexical eval baseline).
+        return None
     v = _embed_query_cached(query)
     if v is None:
         _embed_query_cached.cache_clear()

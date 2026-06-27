@@ -5,7 +5,8 @@ four Labour Codes repealed, from indiacode.nic.in (DSpace).
 
 For each Act: search indiacode, open the best-matching item page (by title-token overlap
 + year), grab its bitstream PDF, download to documents/pdfs/old_acts/, and verify it
-opens in pypdf. Writes a manifest (old_acts_manifest.json) for source spot-checking.
+is a PDF (leading %PDF- magic bytes). Writes a manifest (old_acts_manifest.json) for
+source spot-checking.
 
 Usage:  python scripts/fetch_old_acts.py [N]      # N = limit (default: all 29)
 """
@@ -61,8 +62,8 @@ ACTS = [
      "Inter-State Migrant Workmen Regulation of Employment Act 1979"),
     ("cine_cinema_workers", "Cine Cinema Theatre Workers Regulation Employment Act", 1981,
      "Cinema Theatre Workers Regulation of Employment Act 1981"),
-    ("dock_workers_shw", "Dock Workers Safety Health Welfare Act", 1986,
-     "Dock Workers Safety Health Welfare"),
+    ("dock_workers_shw", "Dock Workers Safety Health Welfare Regulations", 1990,
+     "Dock Workers Safety Health Welfare Regulations 1990"),
     ("bocw_recs", "Building Other Construction Workers Regulation Employment Act", 1996,
      "Building and Other Construction Workers Regulation of Employment Act 1996"),
 ]

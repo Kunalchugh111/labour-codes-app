@@ -1113,7 +1113,8 @@ ABSOLUTE RULES:
   1947 — even if you recall it; the corresponding duty now lives in a 2020 Code, and that is what you
   must cite (gratuity → Code on Social Security §53, etc.).
 - If no supplied excerpt is relevant, return "analysis": [], "authorities": [] and say so plainly in
-  "restatement"/"verdict.summary".
+  "restatement" (and in "direct_answer" for an info question / "verdict.summary" for a compliance
+  question — an info answer's "verdict" is null, so do not rely on it there).
 - If the supplied text answers only PART of the question, answer that part fully and state plainly
   what the supplied provisions do NOT cover — never close the gap with outside knowledge or a guess.
 - A rate/figure set by a SCHEME or by GOVERNMENT NOTIFICATION (e.g. the Provident Fund contribution
