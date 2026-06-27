@@ -139,10 +139,14 @@ def _split_numbered(text, kind="code"):
     # rule numbers go unmatched). Code/old-Act headings are barer, so stay conservative.
     max_gap = 25 if kind == "rules" else 3
     cands = [(int(m.group(1)), m.group(2), m.start()) for m in pat.finditer(text)]
+    # Normally the sequence must start at the top (≤3). But if a document's opening heading is
+    # garbled/missed and the first clean one is, say, 4, requiring ≤3 would accept nothing and
+    # drop the WHOLE document. Fall back to the smallest number actually present so it still splits.
+    first_max = 3 if any(n <= 3 for n, _, _ in cands) else min((n for n, _, _ in cands), default=3)
     items, last, open_at, open_lbl = [], None, None, None
     for num, suf, pos in cands:
         if last is None:
-            accept = num <= 3                              # sequence must start at the top
+            accept = num <= first_max                      # sequence must start at the top
         else:
             ln, ls = last
             accept = (num == ln and suf > ls) or (0 < num - ln <= max_gap)
@@ -431,7 +435,6 @@ def define_chunk(entry: dict, query: str):
                 hits.append((t, c))
     if not hits:
         return None
-    body = s2["text"][:60].split("means")[0]  # keep the "2. In this Code…" lead-in
     lead = re.match(r"\s*\d+\.\s*(?:\(1\)\s*)?In this Code[^()]*?—", s2["text"])
     text = ((lead.group(0).strip() + "\n") if lead else "") + \
         "\n".join(c for _, c in hits[:4])

@@ -1269,7 +1269,14 @@ def _converse_json(system: str, user_text: str,
             messages=[{"role": "user", "content": [{"text": user_text}]}],
             inferenceConfig={"maxTokens": max_tokens, "temperature": temperature},
         )
-        return _parse_answer(resp["output"]["message"]["content"][0]["text"])
+        if resp.get("stopReason") == "max_tokens":
+            # The JSON answer was cut off mid-stream; parsing it would dump broken JSON at the
+            # user. Tell them to narrow the question instead.
+            return {"_raw": "⚠️ The answer was cut off before it finished (length limit). "
+                            "Please narrow the question or ask about one issue at a time."}
+        content = resp.get("output", {}).get("message", {}).get("content", [])
+        text = next((b["text"] for b in content if isinstance(b, dict) and "text" in b), "")
+        return _parse_answer(text)
     except Exception as e:
         return {"_raw": _friendly_bedrock_error(e)}
 
@@ -1328,6 +1335,7 @@ discharge", "time off for a baby" -> "maternity benefit leave", "PF" -> "provide
 Output ONLY keywords and short phrases, space-separated, lowercase, no punctuation, no explanation."""
 
 _query_terms_cache: dict = {}
+_QUERY_TERMS_CACHE_MAX = 512   # bound so a long-running server doesn't leak one entry per query
 
 def analyze_query(raw_q: str) -> str:
     """Expand a plain-English question into legal search keywords, ADDED to the retrieval query so
@@ -1352,6 +1360,8 @@ def analyze_query(raw_q: str) -> str:
         out = re.sub(r"[^a-z0-9\s/-]", " ", out.lower())   # keep a clean keyword line only
         out = re.sub(r"\s+", " ", out).strip()[:200]
         if out:
+            if len(_query_terms_cache) >= _QUERY_TERMS_CACHE_MAX:
+                _query_terms_cache.clear()
             _query_terms_cache[q] = out
         return out
     except Exception:
@@ -1443,10 +1453,16 @@ def _parse_tenure_wage(ql: str):
     return years, months, wage
 
 
+# Gratuity is capped at the ceiling notified by the Central Government under §53(4)(b) of
+# the Code on Social Security, 2020 — currently ₹20,00,000. Without this cap the app states
+# a figure ABOVE the statutory maximum to HR as law for high-wage / long-tenure cases.
+GRATUITY_CEILING = 2_000_000
+
 def gratuity_estimate(query: str):
     """Gratuity for a monthly-rated employee — Code on Social Security §53(2): (monthly
-    wages ÷ 26) × 15 per completed year, a part-year over six months counting as a year.
-    None unless it is a gratuity question with a clean tenure + monthly wage."""
+    wages ÷ 26) × 15 per completed year, a part-year over six months counting as a year,
+    capped at the §53(4)(b) ceiling. None unless it is a gratuity question with a clean
+    tenure + monthly wage."""
     ql = query.lower().replace(",", "")
     if "gratuit" not in ql:
         return None
@@ -1455,8 +1471,10 @@ def gratuity_estimate(query: str):
         return None
     years, months, wage = tw
     eff = years + (1 if months > 6 else 0)
+    raw = round(wage / 26 * 15 * eff)
+    amount = min(raw, GRATUITY_CEILING)
     return {"years": years, "months": months, "eff": eff, "wage": wage,
-            "amount": round(wage / 26 * 15 * eff)}
+            "amount": amount, "raw": raw, "capped": raw > GRATUITY_CEILING}
 
 
 def _amount_notes(query: str) -> list:
@@ -1470,12 +1488,16 @@ def _amount_notes(query: str) -> list:
     g = gratuity_estimate(query)
     if g:
         yrs = f"{g['years']} years" + (f" {g['months']} months" if g['months'] else "")
+        if g["capped"]:
+            tail = (f"₹{g['raw']:,}, which exceeds the ₹20,00,000 ceiling notified under "
+                    f"§53(4)(b); gratuity is therefore capped at ₹{g['amount']:,}.")
+        else:
+            tail = (f"₹{g['amount']:,} (within the ₹20,00,000 ceiling notified under §53(4)(b)).")
         notes.append(("GRATUITY",
             f"Per §53(2) of the Code on Social Security, for a monthly-rated employee gratuity = "
             f"(monthly wages ÷ 26) × 15 for each completed year, a part-year over six months "
             f"counting as a full year. For ₹{g['wage']:,}/month and {yrs} (= {g['eff']} years): "
-            f"₹{g['wage']:,} ÷ 26 × 15 × {g['eff']} = ₹{g['amount']:,}, subject to any ceiling "
-            f"notified by the Central Government."))
+            f"₹{g['wage']:,} ÷ 26 × 15 × {g['eff']} = {tail}"))
 
     # Retrenchment dues — §70: one month's notice (or wages in lieu) AND compensation of
     # 15 days' average pay per completed year (part over six months = a year). The Code does
@@ -1574,8 +1596,12 @@ def build_prompt(query: str, all_results: dict, applicability=None) -> str:
             "to \"partial\" and put the steps needed to comply in \"actions\"; do not label a "
             "not-yet-taken action \"non-compliant\".")
     for heading, body in _amount_notes(query):
-        # Figures computed/fixed in code from the Code — state them, don't recompute.
-        parts.append(f"=== {heading} (use this exact figure; state it, do NOT recompute) ===\n{body}")
+        # Figures computed in code from the Code — state them, don't recompute. Some (lay-off,
+        # overtime) rest on a stated convention (e.g. 26-day divisor, gross-as-basic+DA); the
+        # note body spells that out, so require the caveat to be carried through rather than
+        # presented as a hard statutory amount.
+        parts.append(f"=== {heading} (state this exact figure AND any caveat shown with it; "
+                     f"do NOT recompute) ===\n{body}")
     parts.append(f"=== QUESTION ===\n{query}")
     return "\n\n".join(parts)
 

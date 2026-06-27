@@ -55,8 +55,12 @@ def english_pages(pdf_path):
         t = p.get_text()
         if not t.strip():
             continue
-        nonascii = sum(1 for c in t if ord(c) > 127)
-        if 100 * nonascii / max(len(t), 1) < 12:   # English page (drops Hindi gazette pages)
+        # Count Devanagari specifically, not all non-ASCII: a genuine English wages/gazette page
+        # is dense with ₹, em-dashes and curly quotes (all >127), which under an all-non-ASCII
+        # test could push it over the threshold and wrongly drop it. Hindi pages are ~40-90%
+        # Devanagari, so they stay well above the bar.
+        devanagari = sum(1 for c in t if "ऀ" <= c <= "ॿ")
+        if 100 * devanagari / max(len(t), 1) < 12:   # English page (drops Hindi gazette pages)
             kept.append(t)
     return "\n".join(kept), doc.page_count
 

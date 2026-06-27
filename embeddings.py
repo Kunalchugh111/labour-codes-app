@@ -116,10 +116,20 @@ def _segments(ch: dict) -> list[str]:
 
 # ── query embedding (cached so search_all's 4 per-code calls embed once) ──────
 @lru_cache(maxsize=512)
-def embed_query(query: str):
+def _embed_query_cached(query: str):
     import numpy as np
     v = _embed_one(query, input_type="search_query")
     return None if v is None else np.asarray(v, dtype="float32")
+
+
+def embed_query(query: str):
+    """Embed a search query, cached. A transient embed failure (None — a throttle or network
+    blip) is NOT kept in the cache, so one unlucky call can't permanently demote a query to
+    keyword-only retrieval for the life of the process; the next attempt re-embeds it."""
+    v = _embed_query_cached(query)
+    if v is None:
+        _embed_query_cached.cache_clear()
+    return v
 
 
 def _units(chunks: list[dict]) -> list[tuple]:
