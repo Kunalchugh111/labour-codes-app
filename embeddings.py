@@ -176,7 +176,7 @@ def _build_index(corpus_dict: dict, save: bool = True):
     cached: dict = {}
     if INDEX_PATH.exists():
         try:
-            data = np.load(INDEX_PATH, allow_pickle=True)
+            data = np.load(INDEX_PATH, allow_pickle=False)
             # Read the arrays once: data["vecs"][i] would re-decompress the whole array on every
             # iteration and each row view pins that full copy alive → ~1.8k× blowup → OOM on the
             # cloud. Hoisting the two reads out of the comprehension keeps it to ~tens of MB.

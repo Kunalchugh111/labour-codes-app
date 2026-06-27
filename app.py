@@ -910,7 +910,10 @@ def get_corpus():
     return corpus.load_corpus()
 
 CFG, CORPUS_DATA = get_corpus()
-LOADED = dict(CORPUS_DATA)
+# Use the cached object directly (not a per-rerun dict() copy): corpus.full_corpus_norm/_index
+# memoise on id(corpus_dict), so a fresh id every rerun meant those caches never hit and grew one
+# stale entry per rerun. Nothing mutates LOADED at the top level (the Chapter-X filter copies).
+LOADED = CORPUS_DATA
 
 
 @st.cache_resource
@@ -1620,8 +1623,10 @@ def build_comparison_prompt(query: str, all_results: dict) -> str:
             f"=== QUESTION ===\n{query}")
 
 def _correction_html(corrections):
+    # `o` is the raw user token (from q.split()) — escape both sides before they enter this
+    # unsafe_allow_html block, or a crafted question injects HTML into the rendered page.
     pairs = ", ".join(
-        f'<strong>{o}</strong> → <strong>{f}</strong>' for o, f in corrections
+        f'<strong>{_esc(o)}</strong> → <strong>{_esc(f)}</strong>' for o, f in corrections
     )
     return f'<div class="lc-correction">✏️ Interpreted as: {pairs}</div>'
 
@@ -1814,7 +1819,7 @@ def render_answer(data: dict):
         st.markdown(f'<div class="lc-restate">{_esc(restate)}</div>', unsafe_allow_html=True)
 
     # 1 — Verdict card (compliance) or lead paragraph (info, only when there's no analysis)
-    status   = (verdict.get("status") or "").strip()
+    status   = (verdict.get("status") or "").strip().lower()
     if is_comp and status in _VERDICT:
         icon, label = _VERDICT[status]
         st.markdown(
