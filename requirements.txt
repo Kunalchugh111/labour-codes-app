@@ -1,8 +1,9 @@
 # Streamlit Cloud now provisions Python 3.14, which streamlit 1.40.2 (and its 2024 deps) can't run.
 # Keep the exact tested stack on Python <=3.13; only let 3.14+ resolve a newer, compatible Streamlit.
 streamlit==1.40.2; python_version < "3.14"
-streamlit>=1.40; python_version >= "3.14"
-requests==2.32.3
+streamlit>=1.40,<2; python_version >= "3.14"
 pymupdf==1.27.2.3
-boto3
-numpy
+# Bound numpy/boto3 so a fresh install can't pull a future-major with format/API drift on the
+# startup embeddings-load and Bedrock paths. Ranges include the verified-working numpy 2.4.6.
+boto3>=1.34,<2
+numpy>=1.26,<3

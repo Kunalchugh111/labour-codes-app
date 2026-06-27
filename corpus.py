@@ -351,8 +351,15 @@ def load_corpus():
     return cfg, corpus
 
 
+# Real 2-letter legal abbreviations (e.g. "pf" = provident fund) drawn from SYNONYMS. The
+# {3,} token floor below would otherwise drop them — and with them their whole synonym
+# expansion — so "pf deduction" got zero PF signal in lexical scoring. Whitelist these so a
+# 2-char token is kept only when it's a known term, not for arbitrary junk.
+_SHORT_TERMS = {w for k, vs in SYNONYMS.items() for w in ([k] + list(vs)) if len(w) == 2}
+
 def _terms(q: str) -> list[str]:
-    base = [w for w in re.findall(r"[a-z]{3,}", q.lower()) if w not in STOP]
+    base = [w for w in re.findall(r"[a-z]{2,}", q.lower())
+            if w not in STOP and (len(w) >= 3 or w in _SHORT_TERMS)]
     expanded: set[str] = set(base)
     for term in base:
         if term in SYNONYMS:

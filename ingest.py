@@ -166,8 +166,12 @@ def main():
                 t = code_titles(pdf)
                 if t:
                     titles_map[out] = t
-            except Exception:
-                pass
+                else:
+                    print(f"warn: no section titles mined from {pdf.name} -> {out}")
+            except Exception as e:
+                # Don't fail the whole ingest, but surface it: a missing title map silently
+                # degrades marginal titles, retrieval title-bonuses, and citations downstream.
+                print(f"warn: code_titles failed for {pdf.name}: {e}")
         done.append(f"{pdf.name} ({pages}pp) -> {out}")
     if titles_map:
         (OUT_DIR / "section_titles.json").write_text(
