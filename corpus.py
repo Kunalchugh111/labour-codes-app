@@ -524,14 +524,19 @@ def _lexical_score(ch: dict, terms: list[str]) -> float:
     low = ch["text"].lower()
     prev = ch["preview"].lower()
     title = (ch.get("title") or "").lower()
+    # Match the (unsaturated) preview/title bonuses on whole words, not substrings, so a synonym
+    # like "pay" can't collect a full +2.5 from "company"/"repayment". Single-word terms test set
+    # membership; multi-word terms (e.g. "provident fund") keep substring matching.
+    prev_words = set(re.findall(r"[a-z]+", prev))
+    title_words = set(re.findall(r"[a-z]+", title))
     raw = 0.0
     for t in terms:
         c = low.count(t)
         if c:
-            raw += min(c, 3)          # saturate repeated terms
-            if t in prev:
+            raw += min(c, 3)          # saturate repeated terms (body stays substring-counted)
+            if (t in prev_words) or (" " in t and t in prev):
                 raw += 1.5            # reward early / heading mentions
-        if title and t in title:
+        if title and ((t in title_words) or (" " in t and t in title)):
             raw += 2.5                # a hit in the provision's title is a strong topical signal
     # length-normalise so long definition/admin chunks don't dominate everything
     return raw / (1.0 + math.log(1.0 + _wlen(ch)))
