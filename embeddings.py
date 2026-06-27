@@ -155,10 +155,12 @@ def _attach(chunks: list[dict], cached: dict) -> int:
         if v is not None:
             ch["_vec"] = np.asarray(v, dtype="float32")
             n += 1
-        subs, i = [], 0
-        while (sv := cached.get(f"{k}#s{i}")) is not None:
-            subs.append(np.asarray(sv, dtype="float32"))
-            i += 1
+        # Scan all segment slots, not just a leading run: if one sub-segment failed to embed
+        # (#s1 missing) while later ones succeeded (#s2), a `while` loop would stop at the gap
+        # and silently drop every sub-vector after it. Skip gaps instead.
+        subs = [np.asarray(sv, dtype="float32")
+                for i in range(_SEG_MAX)
+                if (sv := cached.get(f"{k}#s{i}")) is not None]
         if subs:
             ch["_subvecs"] = subs
     return n
