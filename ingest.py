@@ -55,8 +55,12 @@ def english_pages(pdf_path):
         t = p.get_text()
         if not t.strip():
             continue
-        nonascii = sum(1 for c in t if ord(c) > 127)
-        if 100 * nonascii / max(len(t), 1) < 12:   # English page (drops Hindi gazette pages)
+        # Count Devanagari specifically, not all non-ASCII: a genuine English wages/gazette page
+        # is dense with ₹, em-dashes and curly quotes (all >127), which under an all-non-ASCII
+        # test could push it over the threshold and wrongly drop it. Hindi pages are ~40-90%
+        # Devanagari, so they stay well above the bar.
+        devanagari = sum(1 for c in t if "ऀ" <= c <= "ॿ")
+        if 100 * devanagari / max(len(t), 1) < 12:   # English page (drops Hindi gazette pages)
             kept.append(t)
     return "\n".join(kept), doc.page_count
 
@@ -162,8 +166,12 @@ def main():
                 t = code_titles(pdf)
                 if t:
                     titles_map[out] = t
-            except Exception:
-                pass
+                else:
+                    print(f"warn: no section titles mined from {pdf.name} -> {out}")
+            except Exception as e:
+                # Don't fail the whole ingest, but surface it: a missing title map silently
+                # degrades marginal titles, retrieval title-bonuses, and citations downstream.
+                print(f"warn: code_titles failed for {pdf.name}: {e}")
         done.append(f"{pdf.name} ({pages}pp) -> {out}")
     if titles_map:
         (OUT_DIR / "section_titles.json").write_text(

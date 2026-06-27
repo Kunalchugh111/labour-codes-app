@@ -116,6 +116,11 @@ def main():
          "obligations" in corpus.correct_query("my obligations")[0]),
         ("'when can i strike' top code is IR",
          max(c, key=lambda cid: corpus._code_relevance(c[cid], "when can i strike")) == "ir"),
+        ("'pf' expands to provident-fund terms (2-char abbrev not dropped)",
+         "provident fund" in corpus._terms("pf") and "epf" in corpus._terms("pf")),
+        ("'pf contribution' surfaces the SS provident-fund provision",
+         any("provident" in ((ch.get("title") or "") + ch.get("text", "")).lower()
+             for ch in corpus.search_all(c, "pf contribution", k=4).get("ss", {}).get("chunks", []))),
         ("citation lookup returns the real §62 text",
          "maternity benefit" in (corpus.lookup_citation(
              c, "Section 62 — The Code on Social Security, 2020") or "").lower()),

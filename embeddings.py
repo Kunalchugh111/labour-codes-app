@@ -116,10 +116,26 @@ def _segments(ch: dict) -> list[str]:
 
 # ── query embedding (cached so search_all's 4 per-code calls embed once) ──────
 @lru_cache(maxsize=512)
-def embed_query(query: str):
+def _embed_query_cached(query: str):
     import numpy as np
     v = _embed_one(query, input_type="search_query")
     return None if v is None else np.asarray(v, dtype="float32")
+
+
+def embed_query(query: str):
+    """Embed a search query, cached. A transient embed failure (None — a throttle or network
+    blip) is NOT kept in the cache, so one unlucky call can't permanently demote a query to
+    keyword-only retrieval for the life of the process; the next attempt re-embeds it."""
+    if not _has_key():
+        # No credentials → keyword-only retrieval. Without this guard, a prebuilt index loaded
+        # from disk still installs the semantic hook, so every query would block on a doomed
+        # Bedrock call's connect/read timeouts (a hang in the app when the key is missing/expired,
+        # and in the keyless lexical eval baseline).
+        return None
+    v = _embed_query_cached(query)
+    if v is None:
+        _embed_query_cached.cache_clear()
+    return v
 
 
 def _units(chunks: list[dict]) -> list[tuple]:
@@ -145,10 +161,12 @@ def _attach(chunks: list[dict], cached: dict) -> int:
         if v is not None:
             ch["_vec"] = np.asarray(v, dtype="float32")
             n += 1
-        subs, i = [], 0
-        while (sv := cached.get(f"{k}#s{i}")) is not None:
-            subs.append(np.asarray(sv, dtype="float32"))
-            i += 1
+        # Scan all segment slots, not just a leading run: if one sub-segment failed to embed
+        # (#s1 missing) while later ones succeeded (#s2), a `while` loop would stop at the gap
+        # and silently drop every sub-vector after it. Skip gaps instead.
+        subs = [np.asarray(sv, dtype="float32")
+                for i in range(_SEG_MAX)
+                if (sv := cached.get(f"{k}#s{i}")) is not None]
         if subs:
             ch["_subvecs"] = subs
     return n
@@ -164,7 +182,7 @@ def _build_index(corpus_dict: dict, save: bool = True):
     cached: dict = {}
     if INDEX_PATH.exists():
         try:
-            data = np.load(INDEX_PATH, allow_pickle=True)
+            data = np.load(INDEX_PATH, allow_pickle=False)
             # Read the arrays once: data["vecs"][i] would re-decompress the whole array on every
             # iteration and each row view pins that full copy alive → ~1.8k× blowup → OOM on the
             # cloud. Hoisting the two reads out of the comprehension keeps it to ~tens of MB.

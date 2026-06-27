@@ -52,6 +52,19 @@ def test_gratuity_guards():
     assert app.gratuity_estimate("what is gratuity?") is None                      # no numbers
     assert app.gratuity_estimate("gratuity after how many years?") is None          # no wage
 
+def test_gratuity_ceiling():
+    # §53(4)(b): gratuity is capped at the notified ceiling (currently ₹20,00,000). A high-wage,
+    # long-tenure case must report the cap, not the raw figure.
+    g = app.gratuity_estimate("gratuity for 40 years at 300000 per month")
+    assert g["raw"] > app.GRATUITY_CEILING
+    assert g["capped"] is True
+    assert g["amount"] == app.GRATUITY_CEILING == 2_000_000
+    b = _note("gratuity for 40 years at 300000 per month", "GRATUITY")
+    assert "₹2,000,000" in b and "exceeds" in b
+    # an ordinary case is unchanged and not flagged as capped
+    g2 = app.gratuity_estimate("gratuity for 6 years at 26,000 per month")
+    assert g2["capped"] is False and g2["amount"] == 90000
+
 
 # ── retrenchment (§70: 1 month notice + 15 days' avg pay per yr, 26-day basis) ─
 def test_retrenchment_dues():

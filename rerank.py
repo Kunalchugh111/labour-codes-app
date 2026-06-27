@@ -18,6 +18,7 @@ MODEL_ID = os.environ.get("BEDROCK_RERANK_MODEL", "cohere.rerank-v3-5:0")
 _MAX_DOC_CHARS = 4000          # cap each candidate's text sent to the reranker
 _local = threading.local()
 _CACHE: dict = {}              # (query, chunk-keys, top_n) -> [(index, score)]
+_CACHE_MAX = 512               # bound so a long-running server doesn't leak one entry per query
 
 
 def _has_key() -> bool:
@@ -64,6 +65,8 @@ def rerank(query: str, chunks: list, top_n: int | None = None):
             r = _client().invoke_model(modelId=MODEL_ID, body=json.dumps(body))
             results = json.loads(r["body"].read())["results"]
             idx = [(int(res["index"]), float(res["relevance_score"])) for res in results]
+            if len(_CACHE) >= _CACHE_MAX:
+                _CACHE.clear()
             _CACHE[ck] = idx
         except Exception:
             return None
