@@ -325,17 +325,28 @@ section[data-testid="stBottom"] > div {
   background-color: var(--parchment) !important;
 }
 
-/* The search input styling */
+/* The search input — an elevated "command bar". On focus it lifts and gains a soft indigo
+   glow ring (layered box-shadows + a low-alpha 2px border, which stay clean instead of
+   colour-fringing the way a thin saturated/gradient border does). */
+[data-testid="stBottom"], [data-testid="stBottomBlockContainer"], .stBottomBlockContainer {
+  overflow: visible !important;          /* let the focus lift/ring breathe */
+}
 [data-testid="stChatInput"] {
-  background: var(--white) !important;
+  position: relative !important;
+  background: linear-gradient(180deg, #FFFFFF 0%, #FBFCFF 100%) !important;
   border: 1.5px solid var(--indigo-border) !important;
-  border-radius: 16px !important;
-  box-shadow: 0 14px 40px rgba(40,55,120,.16), 0 2px 6px rgba(40,55,120,.06) !important;
-  transition: border-color .22s var(--ease), box-shadow .22s var(--ease) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 16px 44px rgba(40,55,120,.16), 0 2px 6px rgba(40,55,120,.06) !important;
+  transition: border-color .25s var(--ease), box-shadow .25s var(--ease),
+              transform .25s var(--ease) !important;
 }
 [data-testid="stChatInput"]:focus-within {
-  border-color: var(--indigo) !important;
-  box-shadow: 0 14px 40px rgba(40,55,120,.16), 0 0 0 4px rgba(79,91,213,.14) !important;
+  /* A soft, semi-transparent 2px border (blends with white → no harsh 1px colour-fringe)
+     plus a layered glow ring + elevation. */
+  border: 2px solid rgba(79,91,213,.45) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 0 0 4px rgba(79,91,213,.12),
+              0 22px 56px rgba(79,91,213,.20) !important;
 }
 [data-testid="stChatInput"] textarea {
   color: var(--ink) !important;
@@ -343,7 +354,7 @@ section[data-testid="stBottom"] > div {
   font-family: 'DM Sans', sans-serif !important;
   font-weight: 400 !important;
   line-height: 1.6 !important;
-  padding: 14px 16px !important;
+  padding: 15px 17px !important;
 }
 [data-testid="stChatInput"] textarea::placeholder {
   color: var(--slate-3) !important;
@@ -351,16 +362,25 @@ section[data-testid="stBottom"] > div {
   font-weight: 300 !important;
 }
 
-/* Send button */
-[data-testid="stChatInputSubmitButton"] button {
+/* Send button — a circular gradient pill that lifts and glows on hover. The testid is on the
+   button element itself, so target it directly (a descendant `button` never matches). */
+button[data-testid="stChatInputSubmitButton"] {
   background: var(--grad-indigo) !important;
-  border-radius: 12px !important;
-  box-shadow: 0 4px 14px rgba(79,91,213,.32) !important;
-  transition: filter .18s var(--ease), transform .18s var(--ease) !important;
+  border: none !important;
+  border-radius: 50% !important;
+  width: 40px !important; height: 40px !important;
+  color: #fff !important;
+  box-shadow: 0 6px 18px rgba(79,91,213,.40) !important;
+  transition: filter .18s var(--ease), transform .18s var(--ease),
+              box-shadow .18s var(--ease) !important;
 }
-[data-testid="stChatInputSubmitButton"] button:hover {
-  filter: brightness(1.08) !important;
-  transform: translateY(-1px) !important;
+button[data-testid="stChatInputSubmitButton"]:hover {
+  filter: brightness(1.1) !important;
+  transform: translateY(-1px) scale(1.06) !important;
+  box-shadow: 0 9px 26px rgba(79,91,213,.52) !important;
+}
+button[data-testid="stChatInputSubmitButton"] svg {
+  color: #fff !important; fill: #fff !important;
 }
 
 /* ══ SAMPLE QUESTIONS ═══════════════════════════════════════════════════════ */
@@ -598,8 +618,77 @@ ul.lc-applies-list li:last-child { margin-bottom: 0; }
   color: var(--slate-3); font-size: 13.5px; margin-bottom: 12px;
 }
 .lc-xref-label {
+  display: flex; align-items: center; gap: 10px;
   font-size: 10px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase;
-  color: var(--indigo); margin: 18px 0 9px;
+  color: var(--indigo); margin: 22px 0 11px;
+}
+.lc-xref-label::before {
+  content: "✦"; font-size: 9px; opacity: .7; letter-spacing: 0;
+}
+.lc-xref-label::after {              /* hairline rule trailing the label */
+  content: ""; flex: 1; height: 1px;
+  background: linear-gradient(90deg, var(--indigo-border), transparent);
+}
+
+/* ── Follow-up suggestion tiles ──────────────────────────────────────────────
+   Targeted via the keyed-container class so only these tiles get the treatment,
+   not every st.button. Equal specificity to .stButton>button, declared later so
+   it wins on source order. */
+[class*="st-key-fupwrap_"] button {
+  background: linear-gradient(135deg, var(--white) 0%, var(--parchment) 100%) !important;
+  border: 1px solid var(--indigo-border) !important;
+  border-left: 3px solid var(--indigo-2) !important;
+  border-radius: 13px !important;
+  padding: 14px 40px 14px 17px !important;   /* right room for the arrow */
+  color: var(--navy) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  line-height: 1.5 !important;
+  position: relative !important;
+  box-shadow: var(--s1) !important;
+  transition: transform .2s var(--ease), box-shadow .2s var(--ease),
+              border-color .2s var(--ease), background .2s var(--ease) !important;
+}
+[class*="st-key-fupwrap_"] button::after {   /* arrow affordance */
+  content: "→";
+  position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
+  color: var(--indigo); font-size: 14px; font-weight: 700; opacity: .5;
+  transition: right .2s var(--ease), opacity .2s var(--ease);
+}
+[class*="st-key-fupwrap_"] button:hover {
+  background: linear-gradient(135deg, var(--indigo-bg) 0%, var(--parchment-2) 100%) !important;
+  border-color: var(--indigo) !important;
+  border-left-color: var(--indigo) !important;
+  color: var(--navy) !important;
+  transform: translateY(-2px) !important;
+  box-shadow: var(--s2) !important;
+}
+[class*="st-key-fupwrap_"] button:hover::after {
+  opacity: 1; right: 13px;
+}
+
+/* "What changed from the old law?" — a centered ghost pill, set apart from the tiles */
+[class*="st-key-fupchg_"] button {
+  background: var(--indigo-bg) !important;
+  border: 1px solid var(--indigo-border) !important;
+  border-left: 1px solid var(--indigo-border) !important;
+  border-radius: 999px !important;
+  padding: 9px 20px !important;
+  color: var(--indigo-3) !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+  text-align: center !important;
+  width: auto !important;
+  box-shadow: none !important;
+  margin-top: 6px !important;
+  transition: all .2s var(--ease) !important;
+}
+[class*="st-key-fupchg_"] button:hover {
+  background: var(--indigo) !important;
+  border-color: var(--indigo) !important;
+  color: #fff !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 6px 18px rgba(79,91,213,.25) !important;
 }
 
 /* Citation pills */
@@ -1939,21 +2028,27 @@ def _render_followups(query, cross, show_compare, key_prefix, follow_ups=None):
     static per-topic cross-references, plus the old-law comparison button. Rendered from both
     the live turn and the history loop, so keys are prefixed per message."""
     ups = [u.strip() for u in (follow_ups or []) if isinstance(u, str) and u.strip()][:4]
+    # The buttons are wrapped in keyed containers so the stylesheet can target ONLY these
+    # suggestion tiles (via Streamlit's st-key-<key> container class) without restyling every
+    # button in the app.
     if ups:
         st.markdown('<div class="lc-xref-label">Continue — you might ask</div>',
                     unsafe_allow_html=True)
-        cols = st.columns(2)
-        for j, q in enumerate(ups):
-            cols[j % 2].button(q, key=f"{key_prefix}_f{j}", on_click=_submit_explore, args=(q,))
+        with st.container(key=f"fupwrap_{key_prefix}"):
+            cols = st.columns(2)
+            for j, q in enumerate(ups):
+                cols[j % 2].button(q, key=f"{key_prefix}_f{j}", on_click=_submit_explore, args=(q,))
     elif cross:
         st.markdown('<div class="lc-xref-label">Related provisions to check</div>',
                     unsafe_allow_html=True)
-        cols = st.columns(2)
-        for j, (label, q) in enumerate(cross):
-            cols[j % 2].button(label, key=f"{key_prefix}_x{j}", on_click=_submit_explore, args=(q,))
+        with st.container(key=f"fupwrap_{key_prefix}"):
+            cols = st.columns(2)
+            for j, (label, q) in enumerate(cross):
+                cols[j % 2].button(label, key=f"{key_prefix}_x{j}", on_click=_submit_explore, args=(q,))
     if show_compare:
-        st.button("🔄  What changed from the old law?", key=f"{key_prefix}_chg",
-                  on_click=_submit_compare, args=(query,))
+        with st.container(key=f"fupchg_{key_prefix}"):
+            st.button("🔄  What changed from the old law?", key=f"{key_prefix}_chg",
+                      on_click=_submit_compare, args=(query,))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
