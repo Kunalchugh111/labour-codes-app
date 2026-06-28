@@ -91,12 +91,28 @@ st.markdown("""
 html { scroll-behavior: smooth; }
 
 html, body, .stApp {
-  background: linear-gradient(168deg, var(--sky-1) 0%, var(--sky-3) 46%, var(--sky-2) 100%) fixed !important;
+  /* Layered atmosphere: soft indigo + cyan glows floating over the base sky gradient give the
+     page depth so the white content card reads as floating, not pasted on a flat fill. */
+  background:
+    radial-gradient(ellipse 64% 48% at 10% 6%,   rgba(91,110,225,.12), transparent 60%),
+    radial-gradient(ellipse 58% 46% at 94% 94%,  rgba(86,194,214,.10), transparent 62%),
+    radial-gradient(ellipse 50% 40% at 88% 4%,   rgba(124,107,232,.07), transparent 60%),
+    linear-gradient(168deg, var(--sky-1) 0%, var(--sky-3) 46%, var(--sky-2) 100%) !important;
+  background-attachment: fixed !important;
   font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+/* Premium touches: indigo text selection + a slim themed scrollbar. */
+::selection { background: rgba(79,91,213,.18); color: var(--navy); }
+* { scrollbar-width: thin; scrollbar-color: var(--slate-4) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb {
+  background: var(--slate-4); border-radius: 999px;
+  border: 3px solid transparent; background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--slate-3); background-clip: content-box; }
 
 /* ── Kill every piece of Streamlit chrome ─────────────────────────────────── */
 [data-testid="stHeader"],
@@ -389,12 +405,18 @@ button[data-testid="stChatInputSubmitButton"] svg {
   animation: fadeUp .5s var(--ease) .1s both;
 }
 .lc-samples-label {
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: .22em;
+  display: flex; align-items: center; gap: 10px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .18em;
   text-transform: uppercase;
-  color: var(--slate-3);
+  color: var(--indigo);
   margin-bottom: .5rem;
+}
+.lc-samples-label::before { content: "✦"; font-size: 9px; opacity: .7; letter-spacing: 0; }
+.lc-samples-label::after {
+  content: ""; flex: 1; height: 1px;
+  background: linear-gradient(90deg, var(--indigo-border), transparent);
 }
 .lc-samples-hint {
   font-family: 'DM Sans', sans-serif; font-size: 12.5px; line-height: 1.5;
@@ -495,18 +517,24 @@ button[data-testid="baseButton-primary"]:hover {
   box-shadow: var(--s1);
   animation: fadeUp .35s var(--ease) both;
 }
-.lc-verdict-icon { font-size: 28px; flex-shrink: 0; line-height: 1; }
+.lc-verdict-icon {
+  font-size: 20px; flex-shrink: 0; line-height: 1;
+  width: 42px; height: 42px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.65); box-shadow: var(--s1);
+}
 .lc-verdict-meta { flex: 1; }
 .lc-verdict-title {
-  font-size: 10px; font-weight: 700;
+  font-size: 10px; font-weight: 800;
   letter-spacing: .18em; text-transform: uppercase;
   margin-bottom: 4px;
 }
 .lc-verdict-text { font-size: 14px; font-weight: 400; line-height: 1.55; }
 
-.lc-verdict.compliant     { background: var(--green-bg); border-color: var(--green-b); color: var(--green); }
-.lc-verdict.non-compliant { background: var(--red-bg);   border-color: var(--red-b);   color: var(--red); }
-.lc-verdict.partial       { background: var(--amber-bg); border-color: var(--amber-b); color: var(--amber); }
+/* Subtle status gradient (tint → white) reads richer than a flat fill. */
+.lc-verdict.compliant     { background: linear-gradient(135deg, var(--green-bg) 0%, #fff 130%); border-color: var(--green-b); color: var(--green); }
+.lc-verdict.non-compliant { background: linear-gradient(135deg, var(--red-bg) 0%, #fff 130%);   border-color: var(--red-b);   color: var(--red); }
+.lc-verdict.partial       { background: linear-gradient(135deg, var(--amber-bg) 0%, #fff 130%); border-color: var(--amber-b); color: var(--amber); }
 
 /* ══ RESTATEMENT + ANALYSIS (the dissection) ════════════════════════════════ */
 .lc-answer {
@@ -570,12 +598,15 @@ button[data-testid="baseButton-primary"]:hover {
 }
 ul.lc-req, ul.lc-action-list { list-style: none; padding-left: 0 !important; margin: 0 !important; }
 ul.lc-req li {
-  position: relative; padding-left: 26px; margin-bottom: 9px;
+  position: relative; padding-left: 28px; margin-bottom: 10px;
   font-size: 14px; line-height: 1.6; color: var(--ink-2); font-weight: 400;
 }
 ul.lc-req li::before {
-  content: "✓"; position: absolute; left: 0; top: -1px;
-  color: var(--green); font-weight: 700; font-size: 14px;
+  content: "✓"; position: absolute; left: 0; top: 1px;
+  width: 18px; height: 18px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--green-bg); border: 1px solid var(--green-b);
+  color: var(--green); font-weight: 700; font-size: 10px; line-height: 1;
 }
 .lc-action {
   background: var(--indigo-bg); border: 1px solid var(--indigo-border);
@@ -584,12 +615,15 @@ ul.lc-req li::before {
 }
 .lc-action .lc-section-label { color: var(--amber); }
 ul.lc-action-list li {
-  position: relative; padding-left: 24px; margin-bottom: 8px;
+  position: relative; padding-left: 28px; margin-bottom: 9px;
   font-size: 14px; line-height: 1.6; color: var(--ink-2); font-weight: 500;
 }
 ul.lc-action-list li::before {
-  content: "→"; position: absolute; left: 0; top: 0;
-  color: var(--indigo); font-weight: 700;
+  content: "→"; position: absolute; left: 0; top: 1px;
+  width: 18px; height: 18px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--white); border: 1px solid var(--indigo-border);
+  color: var(--indigo); font-weight: 700; font-size: 11px; line-height: 1;
 }
 ul.lc-action-list li:last-child, ul.lc-req li:last-child { margin-bottom: 0; }
 
@@ -707,6 +741,13 @@ ul.lc-applies-list li:last-child { margin-bottom: 0; }
   border: 1px solid var(--indigo-border) !important; border-radius: 12px !important;
   background: var(--white) !important; margin: 10px 0 4px !important;
   box-shadow: var(--s1) !important; overflow: hidden !important;
+  transition: box-shadow .2s var(--ease), border-color .2s var(--ease),
+              transform .2s var(--ease) !important;
+}
+[data-testid="stExpander"]:hover {
+  border-color: var(--indigo) !important;
+  box-shadow: var(--s2) !important;
+  transform: translateY(-1px) !important;
 }
 [data-testid="stExpander"] summary,
 [data-testid="stExpander"] details > summary,
@@ -777,11 +818,12 @@ blockquote.lc-auth-quote {
 
 /* ══ VERBATIM-QUOTE GUARDRAIL ════════════════════════════════════════════════ */
 .lc-trust {
-  font-size: 11.5px; font-weight: 600; letter-spacing: .01em;
-  border-radius: 8px; padding: 7px 12px; margin: 8px 0 4px;
+  font-size: 11.5px; font-weight: 600; letter-spacing: .01em; line-height: 1.55;
+  border-radius: 10px; padding: 10px 14px; margin: 10px 0 4px;
+  border-left-width: 3px !important;
 }
-.lc-trust.ok   { color: var(--green); background: var(--green-bg); border: 1px solid var(--green-b); }
-.lc-trust.warn { color: var(--red);   background: var(--red-bg);   border: 1px solid var(--red-b); }
+.lc-trust.ok   { color: var(--green); background: var(--green-bg); border: 1px solid var(--green-b); border-left-color: var(--green); }
+.lc-trust.warn { color: var(--red);   background: var(--red-bg);   border: 1px solid var(--red-b); border-left-color: var(--red); }
 .lc-verified {
   font-size: 9.5px; font-weight: 700; letter-spacing: .04em; color: var(--green);
   background: var(--green-bg); border: 1px solid var(--green-b);
@@ -930,11 +972,11 @@ blockquote.lc-auth-quote.unverified {
   border-bottom: 1px solid var(--slate-5);
 }
 .lc-src-label {
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: .2em;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .18em;
   text-transform: uppercase;
-  color: var(--slate-3);
+  color: var(--slate-2);
   margin-right: 3px;
 }
 .lc-src-chip {
@@ -943,9 +985,10 @@ blockquote.lc-auth-quote.unverified {
   letter-spacing: .07em;
   text-transform: uppercase;
   color: var(--white);
-  background: var(--navy);
-  padding: 4px 11px;
-  border-radius: 4px;
+  background: linear-gradient(135deg, var(--navy-3) 0%, var(--navy) 100%);
+  padding: 4px 12px;
+  border-radius: 999px;
+  box-shadow: var(--s1);
   white-space: nowrap;
   flex: 0 0 auto;
 }
@@ -2347,9 +2390,12 @@ if (
         "What changed for retrenchment from the old Industrial Disputes Act?",
         "What registers and returns must an establishment maintain?",
     ]
-    c1, c2 = st.columns(2)
-    for i, s in enumerate(samples):
-        (c1 if i % 2 == 0 else c2).button(s, key=f"s{i}", on_click=_submit, args=(s,))
+    # Wrap in the same keyed container the follow-up tiles use, so the landing samples get the
+    # identical card styling (the app shouldn't look like two designs).
+    with st.container(key="fupwrap_samples"):
+        c1, c2 = st.columns(2)
+        for i, s in enumerate(samples):
+            (c1 if i % 2 == 0 else c2).button(s, key=f"s{i}", on_click=_submit, args=(s,))
     st.markdown('</div>', unsafe_allow_html=True)
 
 
