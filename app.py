@@ -325,17 +325,28 @@ section[data-testid="stBottom"] > div {
   background-color: var(--parchment) !important;
 }
 
-/* The search input styling */
+/* The search input — an elevated "command bar". On focus it lifts and gains a soft indigo
+   glow ring (layered box-shadows + a low-alpha 2px border, which stay clean instead of
+   colour-fringing the way a thin saturated/gradient border does). */
+[data-testid="stBottom"], [data-testid="stBottomBlockContainer"], .stBottomBlockContainer {
+  overflow: visible !important;          /* let the focus lift/ring breathe */
+}
 [data-testid="stChatInput"] {
-  background: var(--white) !important;
+  position: relative !important;
+  background: linear-gradient(180deg, #FFFFFF 0%, #FBFCFF 100%) !important;
   border: 1.5px solid var(--indigo-border) !important;
-  border-radius: 16px !important;
-  box-shadow: 0 14px 40px rgba(40,55,120,.16), 0 2px 6px rgba(40,55,120,.06) !important;
-  transition: border-color .22s var(--ease), box-shadow .22s var(--ease) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 16px 44px rgba(40,55,120,.16), 0 2px 6px rgba(40,55,120,.06) !important;
+  transition: border-color .25s var(--ease), box-shadow .25s var(--ease),
+              transform .25s var(--ease) !important;
 }
 [data-testid="stChatInput"]:focus-within {
-  border-color: var(--indigo) !important;
-  box-shadow: 0 14px 40px rgba(40,55,120,.16), 0 0 0 4px rgba(79,91,213,.14) !important;
+  /* A soft, semi-transparent 2px border (blends with white → no harsh 1px colour-fringe)
+     plus a layered glow ring + elevation. */
+  border: 2px solid rgba(79,91,213,.45) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 0 0 4px rgba(79,91,213,.12),
+              0 22px 56px rgba(79,91,213,.20) !important;
 }
 [data-testid="stChatInput"] textarea {
   color: var(--ink) !important;
@@ -343,7 +354,7 @@ section[data-testid="stBottom"] > div {
   font-family: 'DM Sans', sans-serif !important;
   font-weight: 400 !important;
   line-height: 1.6 !important;
-  padding: 14px 16px !important;
+  padding: 15px 17px !important;
 }
 [data-testid="stChatInput"] textarea::placeholder {
   color: var(--slate-3) !important;
@@ -351,16 +362,25 @@ section[data-testid="stBottom"] > div {
   font-weight: 300 !important;
 }
 
-/* Send button */
-[data-testid="stChatInputSubmitButton"] button {
+/* Send button — a circular gradient pill that lifts and glows on hover. The testid is on the
+   button element itself, so target it directly (a descendant `button` never matches). */
+button[data-testid="stChatInputSubmitButton"] {
   background: var(--grad-indigo) !important;
-  border-radius: 12px !important;
-  box-shadow: 0 4px 14px rgba(79,91,213,.32) !important;
-  transition: filter .18s var(--ease), transform .18s var(--ease) !important;
+  border: none !important;
+  border-radius: 50% !important;
+  width: 40px !important; height: 40px !important;
+  color: #fff !important;
+  box-shadow: 0 6px 18px rgba(79,91,213,.40) !important;
+  transition: filter .18s var(--ease), transform .18s var(--ease),
+              box-shadow .18s var(--ease) !important;
 }
-[data-testid="stChatInputSubmitButton"] button:hover {
-  filter: brightness(1.08) !important;
-  transform: translateY(-1px) !important;
+button[data-testid="stChatInputSubmitButton"]:hover {
+  filter: brightness(1.1) !important;
+  transform: translateY(-1px) scale(1.06) !important;
+  box-shadow: 0 9px 26px rgba(79,91,213,.52) !important;
+}
+button[data-testid="stChatInputSubmitButton"] svg {
+  color: #fff !important; fill: #fff !important;
 }
 
 /* ══ SAMPLE QUESTIONS ═══════════════════════════════════════════════════════ */
