@@ -1039,7 +1039,9 @@ blockquote.lc-auth-quote.unverified {
 # ─────────────────────────────────────────────────────────────────────────────
 @st.cache_resource
 def get_corpus():
-    return corpus.load_corpus()
+    cfg, data = corpus.load_corpus()
+    corpus.warm(data)   # pre-build norm + citation index so the first answer doesn't stall
+    return cfg, data
 
 CFG, CORPUS_DATA = get_corpus()
 # Use the cached object directly (not a per-rerun dict() copy): corpus.full_corpus_norm/_index
