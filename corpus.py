@@ -212,16 +212,23 @@ def _norm_title(s: str) -> str:
 
 def _strip_marginal_titles(text: str, titles_norm: set) -> str:
     """Drop runs of lines that exactly reconstruct a known section title — those are
-    side-margin notes the extractor dumped mid-body, never real sentence text."""
+    side-margin notes the extractor dumped mid-body, never real sentence text.
+
+    Each line is normalised ONCE and windows join the cached parts — equivalent to
+    normalising every raw join (as this used to) because _norm_title collapses all
+    non-alphanumerics to single spaces, so norm(join(lines)) == " ".join of the
+    non-empty per-line norms. This was 80% of corpus parse time (382k _norm_title
+    calls -> 72k); output is byte-identical across the whole corpus."""
     if not titles_norm:
         return text
     lines = text.split("\n")
-    out, i = [], 0
-    while i < len(lines):
+    norm = [_norm_title(l) for l in lines]
+    out, i, n = [], 0, len(lines)
+    while i < n:
         span = 0
-        for k in range(min(6, len(lines) - i), 0, -1):       # greedy: longest run first
-            joined = " ".join(l.strip() for l in lines[i:i + k] if l.strip())
-            if _norm_title(joined) in titles_norm:
+        for k in range(min(6, n - i), 0, -1):                # greedy: longest run first
+            joined = " ".join(nl for nl in norm[i:i + k] if nl)
+            if joined in titles_norm:
                 span = k
                 break
         if span:
@@ -318,7 +325,7 @@ def _section_titles():
         return {}
 
 
-def load_corpus():
+def _parse_corpus():
     cfg = json.loads((ROOT / "corpus_config.json").read_text())
     all_titles = _section_titles()
     corpus: dict = {}
@@ -351,30 +358,107 @@ def load_corpus():
     return cfg, corpus
 
 
+# ── Processed-corpus disk cache ───────────────────────────────────────────────
+# The full regex parse takes seconds; the parsed corpus is pure builtin types, so a JSON
+# snapshot keyed by a fingerprint of every input (source texts, titles, config, AND this
+# parser file) loads the same data in ~13ms. mtime-based, so any touch re-parses — the
+# cache can go stale-missing but never stale-wrong. Bump _CACHE_VERSION if the chunk
+# schema changes in a file the fingerprint doesn't cover.
+_CACHE_PATH = PROCESSED / "corpus_cache.json"
+_CACHE_VERSION = 1
+
+
+def _fingerprint() -> str:
+    import hashlib
+    h = hashlib.sha256()
+    files = sorted(PROCESSED.glob("*.txt")) + [PROCESSED / "section_titles.json",
+                                               ROOT / "corpus_config.json", Path(__file__)]
+    for p in files:
+        try:
+            st = p.stat()
+            h.update(f"{p.name}|{st.st_mtime_ns}|{st.st_size}\n".encode())
+        except OSError:
+            h.update(f"{p.name}|missing\n".encode())
+    return h.hexdigest()
+
+
+def load_corpus():
+    fp = _fingerprint()
+    try:
+        blob = json.loads(_CACHE_PATH.read_text(encoding="utf-8"))
+        if blob.get("v") == _CACHE_VERSION and blob.get("fp") == fp:
+            return blob["cfg"], blob["corpus"]
+    except Exception:
+        pass                                       # missing/corrupt cache → fresh parse
+    cfg, corpus = _parse_corpus()
+    try:                                           # cache write is best-effort
+        tmp = _CACHE_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"v": _CACHE_VERSION, "fp": fp,
+                                   "cfg": cfg, "corpus": corpus}), encoding="utf-8")
+        os.replace(tmp, _CACHE_PATH)
+    except Exception:
+        pass
+    return cfg, corpus
+
+
+def warm(corpus_dict: dict) -> None:
+    """Pre-build the lazily-cached full-corpus norm and citation index so the first
+    answer doesn't pay their one-time cost (~0.2-0.45s) after the LLM call returns."""
+    full_corpus_norm(corpus_dict)
+    _index(corpus_dict)
+
+
 # Real 2-letter legal abbreviations (e.g. "pf" = provident fund) drawn from SYNONYMS. The
 # {3,} token floor below would otherwise drop them — and with them their whole synonym
 # expansion — so "pf deduction" got zero PF signal in lexical scoring. Whitelist these so a
 # 2-char token is kept only when it's a known term, not for arbitrary junk.
 _SHORT_TERMS = {w for k, vs in SYNONYMS.items() for w in ([k] + list(vs)) if len(w) == 2}
 
-def _terms(q: str) -> list[str]:
-    base = [w for w in re.findall(r"[a-z]{2,}", q.lower())
+def _expand_term(term: str) -> set[str]:
+    """One query token's full expansion family: itself, its synonyms, the canonical
+    cluster it belongs to, and vocabulary words it prefixes (with their synonyms)."""
+    expanded: set[str] = {term}
+    if term in SYNONYMS:
+        expanded.update(SYNONYMS[term])
+    for canonical, syns in SYNONYMS.items():
+        if term in syns:
+            expanded.add(canonical)
+            expanded.update(syns)
+    if len(term) >= 5:
+        for vocab_word in LEGAL_VOCABULARY:
+            if vocab_word.startswith(term) and vocab_word != term:
+                expanded.add(vocab_word)
+                if vocab_word in SYNONYMS:
+                    expanded.update(SYNONYMS[vocab_word])
+    return expanded
+
+
+def _base_tokens(q: str) -> list[str]:
+    return [w for w in re.findall(r"[a-z]{2,}", q.lower())
             if w not in STOP and (len(w) >= 3 or w in _SHORT_TERMS)]
-    expanded: set[str] = set(base)
-    for term in base:
-        if term in SYNONYMS:
-            expanded.update(SYNONYMS[term])
-        for canonical, syns in SYNONYMS.items():
-            if term in syns:
-                expanded.add(canonical)
-                expanded.update(syns)
-        if len(term) >= 5:
-            for vocab_word in LEGAL_VOCABULARY:
-                if vocab_word.startswith(term) and vocab_word != term:
-                    expanded.add(vocab_word)
-                    if vocab_word in SYNONYMS:
-                        expanded.update(SYNONYMS[vocab_word])
+
+
+def _terms(q: str) -> list[str]:
+    expanded: set[str] = set()
+    for term in _base_tokens(q):
+        expanded.update(_expand_term(term))
     return list(expanded)
+
+
+def _term_groups(q: str) -> list[frozenset]:
+    """The query's terms as one GROUP per original token (each group = that token's
+    expansion family), deduplicated. Scoring takes the best term per group instead of
+    summing every variant, so 'retrench/retrenched/retrenchment/layoff' count as ONE
+    concept — a chunk repeating a single stem can't out-score one matching more of the
+    query's distinct concepts."""
+    seen: set[frozenset] = set()
+    out: list[frozenset] = []
+    for term in _base_tokens(q):
+        g = frozenset(_expand_term(term))
+        if g not in seen:
+            seen.add(g)
+            out.append(g)
+    return out
 
 
 # ── Definition extraction ──────────────────────────────────────────────────
@@ -518,9 +602,17 @@ def get_config() -> RetrievalConfig:
     return _CFG
 
 
-def _lexical_score(ch: dict, terms: list[str]) -> float:
+# Damping on non-dominant variants within one expansion family (1.0 = historical flat sum).
+# Swept 0.3–1.0 on the evals: 0.45 keeps every baseline metric identical while lifting
+# HARD recall@5 4→6, recall@3 2→4, MRR 0.114→0.161; 0.3/0.35 regress GOLD recall@5.
+_FAMILY_DAMP = 0.45
+
+
+def _lexical_score(ch: dict, terms) -> float:
     """Length-normalised keyword score: saturated term counts, plus bonuses for a hit in
-    the preview (early/heading mention) and in the provision's marginal title."""
+    the preview (early/heading mention) and in the provision's marginal title.
+    `terms` may be a flat list (every term scored independently — historical behaviour) or
+    a list of GROUPS from _term_groups (each group contributes its best term only)."""
     low = ch["text"].lower()
     prev = ch["preview"].lower()
     title = (ch.get("title") or "").lower()
@@ -529,15 +621,32 @@ def _lexical_score(ch: dict, terms: list[str]) -> float:
     # membership; multi-word terms (e.g. "provident fund") keep substring matching.
     prev_words = set(re.findall(r"[a-z]+", prev))
     title_words = set(re.findall(r"[a-z]+", title))
-    raw = 0.0
-    for t in terms:
+
+    memo: dict = {}                   # families overlap, so each term scores once
+
+    def term_score(t: str) -> float:
+        r = memo.get(t)
+        if r is not None:
+            return r
+        r = 0.0
         c = low.count(t)
         if c:
-            raw += min(c, 3)          # saturate repeated terms (body stays substring-counted)
+            r += min(c, 3)            # saturate repeated terms (body stays substring-counted)
             if (t in prev_words) or (" " in t and t in prev):
-                raw += 1.5            # reward early / heading mentions
+                r += 1.5              # reward early / heading mentions
         if title and ((t in title_words) or (" " in t and t in title)):
-            raw += 2.5                # a hit in the provision's title is a strong topical signal
+            r += 2.5                  # a hit in the provision's title is a strong topical signal
+        memo[t] = r
+        return r
+
+    raw = 0.0
+    for t in terms:
+        if isinstance(t, frozenset):  # a concept group: dominant variant + damped others
+            scores = [term_score(w) for w in t]
+            m = max(scores, default=0.0)
+            raw += m + _FAMILY_DAMP * (sum(scores) - m)
+        else:
+            raw += term_score(t)
     # length-normalise so long definition/admin chunks don't dominate everything
     return raw / (1.0 + math.log(1.0 + _wlen(ch)))
 
@@ -557,34 +666,62 @@ def _semantic_pooled_score(ch: dict, query: str) -> float:
     return _semantic_score(ch, query)
 
 
-def _structural_adjust(score: float, ch: dict, explicit: set[int], definitional: bool) -> float:
+# Definitional-§2 boost per mode, kept at the SAME fraction (~0.59) of that mode's typical
+# top-1 score that the historical lexical +2.0 sits at (2.0 / 3.37 median expected-code top-1):
+#   lexical             top-1 median 3.37 (measured over the 40 eval queries)  → 2.0 (unchanged)
+#   embeddings_primary  top-1 pooled cosine ≈ 0.42 (proxy band 0.3–0.66 from the on-disk index) → 0.25
+#   fusion              RRF is rank-compressed (top-1 0.089–0.095, top-5 0.068–0.082,
+#                       §2 base 0.045–0.067 measured) — boost = the lift that parks §2
+#                       mid-top-8 without overtaking a genuine #1: needed lift p50 0.024,
+#                       ceiling min(top1−§2) 0.028                             → 0.02
+#   rerank              Cohere relevance ∈ [0, 1] (not measurable keyless)     → 0.3
+_DEF_BOOST_LEX = 2.0
+_DEF_BOOST_EMB = 0.25
+_DEF_BOOST_RRF = 0.02
+_DEF_BOOST_RERANK = 0.3
+
+
+def _structural_adjust(score: float, ch: dict, explicit: set, definitional: bool,
+                       def_boost: float = _DEF_BOOST_LEX) -> float:
     """Legal-structure score adjustments shared by every mode: the §2 noise penalty
-    (a retirable crutch, flag-gated), the definitional §2 boost, and the explicit
-    'Section N' override (always on — it honours an explicit user request)."""
+    (a retirable crutch, flag-gated), the definitional §2 boost (scaled to the calling
+    mode's score magnitude via `def_boost`), and the explicit 'Section N' override
+    (always on — it honours an explicit user request).
+    `explicit` holds (kind, num) pairs — 'section 70' boosts only Section 70, never Rule 70."""
     if ch["num"] == 2 and ch["label"].startswith("Section") and not definitional:
         if _CFG.use_s2_penalty:
             score *= 0.5              # the definitions section is a noise magnet
-    if definitional and ch["num"] == 2:
-        score += 2.0
-    if ch["num"] in explicit:
+    # Boost the Definitions SECTION only (Rule 2 is also titled 'Definitions' but never holds
+    # the asked-for term), and only when the user did NOT name a specific provision — an
+    # explicit 'Section N' request wants that Section, not the definitions list.
+    if definitional and not explicit and ch["num"] == 2 and ch["label"].startswith("Section"):
+        score += def_boost
+    kind = "rule" if ch["label"].startswith("Rule") else "section"
+    if (kind, ch["num"]) in explicit:
         score += 1000.0              # user named this Section/Rule explicitly
     return score
 
 
-def _combined_score(ch: dict, terms: list[str], explicit: set[int], definitional: bool,
-                    query: str = "") -> float:
+def _explicit_provisions(query: str) -> set:
+    """(kind, num) pairs the user named, e.g. 'section 70' -> {('section', 70)}."""
+    return {("rule" if k == "rule" else "section", int(n))
+            for k, n in re.findall(r"(section|rule|regulation)\s+(\d{1,3})", query.lower())}
+
+
+def _combined_score(ch: dict, terms: list[str], explicit: set, definitional: bool,
+                    query: str = "", def_boost: float = _DEF_BOOST_LEX) -> float:
     """Historical lexical-mode score: length-normalised keyword score + semantic bonus, with
     structural adjustments. Used directly for routing and old-Act comparison so those stay on a
     stable, lexically-calibrated signal regardless of _CFG.mode."""
     base = _lexical_score(ch, terms) + _CFG.semantic_weight * _semantic_score(ch, query)
-    return _structural_adjust(base, ch, explicit, definitional)
+    return _structural_adjust(base, ch, explicit, definitional, def_boost)
 
 
-def _score_chunk(ch: dict, terms: list[str], explicit: set[int], definitional: bool,
+def _score_chunk(ch: dict, terms: list[str], explicit: set, definitional: bool,
                  query: str = "") -> float:
     if _CFG.mode == "embeddings_primary":
         base = _semantic_pooled_score(ch, query) + _CFG.embed_lex_weight * _lexical_score(ch, terms)
-        return _structural_adjust(base, ch, explicit, definitional)
+        return _structural_adjust(base, ch, explicit, definitional, _DEF_BOOST_EMB)
     # lexical (default — byte-identical to history); fusion/rerank reuse this combined score as
     # their base candidate ranking and re-order it in `search` (see _score_list dispatch).
     return _combined_score(ch, terms, explicit, definitional, query)
@@ -603,7 +740,7 @@ def _fusion_rank(chunks, terms, query, explicit, definitional):
     out = []
     for ch in chunks:
         rrf = 1.0 / (k + lex_rank[id(ch)]) + 1.0 / (k + sem_rank[id(ch)])
-        out.append((_structural_adjust(rrf, ch, explicit, definitional), ch))
+        out.append((_structural_adjust(rrf, ch, explicit, definitional, _DEF_BOOST_RRF), ch))
     return out
 
 
@@ -622,15 +759,16 @@ def _rerank_rank(chunks, terms, query, explicit, definitional):
         order = None
     if not order:
         return fused                                # fail-soft → fusion ranking
-    out = [(_structural_adjust(score, ch, explicit, definitional), ch) for ch, score in order]
+    out = [(_structural_adjust(score, ch, explicit, definitional, _DEF_BOOST_RERANK), ch)
+           for ch, score in order]
     ranked = {id(ch) for _, ch in out}
     tail = [(s * 1e-6, ch) for s, ch in fused if id(ch) not in ranked]   # keep a full list
     return out + tail
 
 
 def _score_list(chunks: list[dict], query: str, boost: str = "", definitional=None):
-    terms = _terms(query + (" " + boost if boost else ""))
-    explicit = {int(n) for n in re.findall(r"(?:section|rule)\s+(\d{1,3})", query.lower())}
+    terms = _term_groups(query + (" " + boost if boost else ""))
+    explicit = _explicit_provisions(query)
     if definitional is None:                       # callers (e.g. old-Act comparison) can override
         definitional = bool(_DEFINITIONAL_RE.search(query.lower()))
     if _CFG.mode == "fusion":
@@ -654,10 +792,15 @@ def _code_relevance(entry: dict, query: str) -> float:
     # Routing always scores on the LEXICAL signal (lexical + semantic bonus), independent of
     # _CFG.mode, so the routing gates (_GATE_ABS and the relative gate) stay calibrated to the
     # magnitudes they were tuned for. The mode only changes WITHIN-code ranking (see `search`).
-    terms = _terms(query)
+    terms = _term_groups(query)
     definitional = bool(_DEFINITIONAL_RE.search(query.lower()))
-    explicit = {int(n) for n in re.findall(r"(?:section|rule)\s+(\d{1,3})", query.lower())}
-    scored = sorted((_combined_score(ch, terms, explicit, definitional, query)
+    explicit = _explicit_provisions(query)
+    # def_boost=0.0: the definitional §2 boost is a WITHIN-code ranking aid. Every code has a
+    # Definitions section, so adding it here inflated every code's relevance equally (+2.0 for
+    # §2, +2.0 more for Rule 2), collapsing the routing gate — all 4 codes were kept for ANY
+    # definitional query (~70% wasted grounding). With 0.0 the gate re-discriminates; codes
+    # that genuinely define the asked term still route in on their real lexical signal.
+    scored = sorted((_combined_score(ch, terms, explicit, definitional, query, def_boost=0.0)
                      for ch in entry["chunks"]), reverse=True)
     return sum(scored[:3])
 
@@ -676,7 +819,11 @@ def search(entry: dict, query: str, k: int = 8, min_score: float = _MIN_SCORE,
     # procedural Rule surfaces alongside its Section
     n_rules = sum(1 for _, c in picks if c["label"].startswith("Rule"))
     if _CFG.reserve_rules and n_rules < 2 and picks:
-        floor = 0.45 * picks[0][0]
+        # Anchor the relevance floor on the best NON-overridden score: an explicit
+        # 'Section N' chunk carries +1000, and 0.45*1000 is a floor no real Rule can
+        # clear — it silently disabled the Rules reservation for every explicit query.
+        top_base = next((s for s, _ in picks if s < 500.0), picks[0][0])
+        floor = 0.45 * top_base
         chosen = {id(c) for _, c in picks}
         extra = [(s, c) for s, c in scored
                  if c["label"].startswith("Rule") and id(c) not in chosen
@@ -695,8 +842,11 @@ def search(entry: dict, query: str, k: int = 8, min_score: float = _MIN_SCORE,
 
     # For "what is X" queries, lead with the definition. Prefer a FOCUSED chunk holding
     # just the asked-for clause (so it isn't buried past the excerpt cap); fall back to
-    # the full Section 2 when we can't pinpoint the term.
-    if definitional:
+    # the full Section 2 when we can't pinpoint the term. Skipped when the user named a
+    # specific provision ('what is ... in Section 83?') — they want THAT Section, and the
+    # define_chunk partial-match ('worker' ⊂ 'worker re-skilling fund') would hijack the
+    # lead slot with the definitions list.
+    if definitional and not _explicit_provisions(query):
         focused = define_chunk(entry, query)
         if focused is not None:
             result = [focused] + [c for c in result
@@ -811,8 +961,8 @@ def search_old(entry: dict, query: str, k: int = 6, min_score: float = _MIN_SCOR
     # surface the old Act's Section 2 and bury the real change). Old Acts are never embedded and
     # comparison is a lexical-grounding task, so score on the combined (lexical) signal regardless
     # of _CFG.mode — keeping the 0.45 floor calibrated.
-    terms = _terms(query)
-    explicit = {int(n) for n in re.findall(r"(?:section|rule)\s+(\d{1,3})", query.lower())}
+    terms = _term_groups(query)
+    explicit = _explicit_provisions(query)
     scored = sorted(((_combined_score(ch, terms, explicit, False, query), ch) for ch in chunks),
                     key=lambda x: x[0], reverse=True)
     return [c for s, c in scored[:k] if s >= min_score]

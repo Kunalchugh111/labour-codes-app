@@ -4,3 +4,5 @@ __pycache__/
 .streamlit/secrets.toml
 # Per-model embedding indexes are experiment artifacts; only the canonical embeddings.npz is tracked
 documents/processed/embeddings.*.npz
+# Parsed-corpus snapshot; regenerated on any source change (see corpus._fingerprint)
+documents/processed/corpus_cache.json

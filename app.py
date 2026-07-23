@@ -1039,7 +1039,9 @@ blockquote.lc-auth-quote.unverified {
 # ─────────────────────────────────────────────────────────────────────────────
 @st.cache_resource
 def get_corpus():
-    return corpus.load_corpus()
+    cfg, data = corpus.load_corpus()
+    corpus.warm(data)   # pre-build norm + citation index so the first answer doesn't stall
+    return cfg, data
 
 CFG, CORPUS_DATA = get_corpus()
 # Use the cached object directly (not a per-rerun dict() copy): corpus.full_corpus_norm/_index
@@ -1700,6 +1702,120 @@ def _amount_notes(query: str) -> list:
             "Per §18(3) of the Code on Wages, the total of all deductions from an employee's "
             "wages in any wage period must not exceed 50% of those wages (any excess is "
             "recovered in the prescribed manner). State this 50% limit explicitly."))
+
+    # Annual bonus — Code on Wages §26(1): minimum bonus is 8⅓% (= 1/12) of the wages
+    # earned in the accounting year or ₹100, whichever is higher, for an employee with at
+    # least 30 days' work that year; §26(3)/(5): the maximum (surplus-linked) bonus is 20%.
+    # Fires on a bonus question with a monthly wage; the annualisation (12 × monthly) is a
+    # stated convention. NOT fixed by the Code: the per-mensem eligibility wage ceiling and
+    # the §26(2) calculation ceiling — both set by notification — so the note discloses them.
+    if wm and re.search(r"\bbonus(?:es)?\b", ql) and not re.search(r"joining|sign[\s-]?on|referral", ql):
+        wage = int(wm.group(1))
+        if wage >= 1000:
+            annual = 12 * wage
+            mn = max(round(annual / 12), 100)
+            mx = round(annual * 0.20)
+            notes.append(("ANNUAL BONUS RANGE",
+                f"Per §26(1) of the Code on Wages, an employee who has worked at least 30 days "
+                f"in the accounting year is due a minimum annual bonus of 8⅓% of the wages "
+                f"earned that year or ₹100, whichever is higher; per §26(3)/(5) the maximum "
+                f"(where allocable surplus permits) is 20%. Taking a full year at "
+                f"₹{wage:,}/month (wages earned = ₹{annual:,}): minimum = 8⅓% × ₹{annual:,} "
+                f"= ₹{mn:,} (one month's wage); maximum = 20% = ₹{mx:,}. Per §39(1) the bonus "
+                f"must be credited to the employee's bank account within 8 months of the close "
+                f"of the accounting year. (Caveats to state: the wage ceiling for WHO qualifies "
+                f"and the §26(2) ceiling on the wage USED in the calculation are both set by "
+                f"government notification, not fixed in the Code — the figures above assume the "
+                f"stated wage is used uncapped.)"))
+
+    # Annual leave with wages — OSH Code §32(1)(i)-(ii): a worker who has worked 180 days
+    # or more in the calendar year earns one day of leave for every 20 days worked (one per
+    # 15 for adolescents and below-ground mine workers — disclosed, not computed). The
+    # 180-day gate and the ÷20 accrual are both fixed in the Code, so both branches are
+    # deterministic. Fires only on a leave question with an explicit "worked N days".
+    if re.search(r"\bleave\b", ql) and not re.search(r"maternity|pregnan", ql):
+        lm = re.search(r"work(?:ed|s|ing)?\s*(?:for\s*)?(\d{1,3})\s*days?", ql)
+        if lm:
+            days = int(lm.group(1))
+            if 1 <= days <= 366:
+                if days >= 180:
+                    notes.append(("ANNUAL LEAVE ENTITLEMENT",
+                        f"Per §32(1) of the OSH Code, a worker who has worked 180 days or more "
+                        f"in the calendar year is entitled to one day of leave with wages for "
+                        f"every 20 days worked. For {days} days worked: {days} ÷ 20 = "
+                        f"{days // 20} days of leave. (Adolescent workers and workers below "
+                        f"ground in a mine accrue at one day per 15 days worked instead. Unused "
+                        f"leave carries forward up to 30 days — §32(1)(vii); leave refused "
+                        f"carries forward without limit.)"))
+                else:
+                    notes.append(("ANNUAL LEAVE ENTITLEMENT",
+                        f"Per §32(1)(i) of the OSH Code, the annual-leave entitlement (one day "
+                        f"per 20 days worked) requires 180 days or more worked in the calendar "
+                        f"year; {days} days does NOT cross that threshold. (Exception to state: "
+                        f"a worker whose service began mid-year qualifies by working one-fourth "
+                        f"of the remaining days — §32(1)(v); lay-off, maternity leave and "
+                        f"earlier annual leave count toward the 180 days — §32(1)(iii).)"))
+
+    # Final-settlement deadline — Code on Wages §17(2): wages must be paid within TWO
+    # WORKING DAYS of removal, dismissal, retrenchment or resignation (incl. closure).
+    # Statement-only note (like DEDUCTION LIMIT): fires on a termination-event question
+    # with a timing cue, so it never fires on bare "when must wages be paid?".
+    if (re.search(r"remov|dismiss|retrench|resign|terminat|sack|fired?\b|closure|closing down", ql)
+            and re.search(r"full\s*(?:and|&)\s*final|final settlement|settle|"
+                          r"when\b.{0,60}\b(?:pay|paid|wages|dues)|"
+                          r"(?:pay|paid|wages|dues)\b.{0,60}\bwhen|within how|how (?:soon|long)|"
+                          r"time[\s-]?limit|deadline", ql)):
+        notes.append(("FINAL WAGES DEADLINE",
+            "Per §17(2) of the Code on Wages, where an employee is removed, dismissed, "
+            "retrenched, resigns, or becomes unemployed due to closure, the wages payable "
+            "must be paid within TWO WORKING DAYS of that event. State this deadline "
+            "explicitly. (§17(3): the appropriate Government may notify a different time "
+            "limit; ordinary monthly wages are otherwise due before the 7th of the "
+            "following month — §17(1).)"))
+
+    # Gratuity payment deadline — SS Code §56(3): within 30 days of becoming payable,
+    # failing which simple interest runs (§56(4), rate notified — not fixed by the Code).
+    # Statement-only; fires on a gratuity question with a timing/late cue.
+    if "gratuit" in ql and re.search(r"\blate\b|delay|not (?:been )?paid|unpaid|when\b|within|"
+                                     r"how (?:soon|long)|time[\s-]?limit|deadline|interest", ql):
+        notes.append(("GRATUITY PAYMENT DEADLINE",
+            "Per §56(3) of the Code on Social Security, the employer must arrange to pay "
+            "gratuity within THIRTY DAYS from the date it becomes payable; per §56(4), if "
+            "unpaid in that period, simple interest runs from the due date to payment (at "
+            "a rate notified by the Central Government — the rate itself is not fixed in "
+            "the Code)."))
+
+    # Maternity-benefit branch selection — SS Code §60(3)-(4). The DEFAULT 26-week period
+    # is retrieved reliably; what the model misses are the provisos, so this fires only
+    # when a proviso fact is stated: two or more surviving children -> 12 weeks (max 6
+    # pre-delivery); adoption (child under 3 months) / commissioning mother -> 12 weeks
+    # from handover. Also the §60(2) 80-day eligibility gate when "worked N days" is given.
+    if re.search(r"maternity|pregnan|childbirth|adopt|commissioning", ql):
+        if re.search(r"(?:two|2|three|3|four|4)\s*(?:or more\s*)?(?:surviving\s*)?"
+                     r"(?:children|kids)|second child|third child", ql):
+            notes.append(("MATERNITY BENEFIT PERIOD",
+                "Per the first proviso to §60(3) of the Code on Social Security, a woman who "
+                "already has TWO OR MORE SURVIVING CHILDREN is entitled to a maximum of "
+                "TWELVE weeks of maternity benefit (not 26), of which not more than six weeks "
+                "may precede the expected delivery date. State 12 weeks, not the general 26."))
+        elif re.search(r"adopt|commissioning", ql):
+            notes.append(("MATERNITY BENEFIT PERIOD",
+                "Per §60(4) of the Code on Social Security, a woman who legally adopts a child "
+                "below the age of three months, or a commissioning mother, is entitled to "
+                "TWELVE weeks of maternity benefit from the date the child is handed over. "
+                "(A child adopted at three months or older is outside §60(4)'s words — "
+                "disclose that limit rather than assuming 12 weeks applies.)"))
+        wd = re.search(r"work(?:ed|s|ing)?\s*(?:for\s*|only\s*)?(\d{1,3})\s*days?", ql)
+        if wd and re.search(r"maternity|pregnan", ql):
+            days = int(wd.group(1))
+            if 1 <= days <= 366:
+                verdict = ("crosses" if days >= 80 else "does NOT cross")
+                notes.append(("MATERNITY ELIGIBILITY (80 DAYS)",
+                    f"Per §60(2) of the Code on Social Security, maternity benefit requires "
+                    f"having actually worked at least EIGHTY days in the twelve months "
+                    f"immediately preceding the expected delivery date; {days} days worked "
+                    f"{verdict} that threshold. (Days laid off and paid holidays count toward "
+                    f"the 80 — §60(2) Explanation.)"))
     return notes
 
 
@@ -2428,54 +2544,71 @@ if st.session_state.pending:
     force_compare = st.session_state.force_compare
     st.session_state.force_compare = False
 
-    with st.spinner("Searching the codes…"):
-        extra_terms = analyze_query(raw_q)               # legal keywords; "" if offline/error
-        # Route from the original query; the expansion only sharpens ranking and may add a
-        # missed code — it can never knock the relevant code below the routing gate.
-        all_results = corpus.search_all(LOADED, corrected_q, k=8, boost=extra_terms)
-
-    sources      = [r["meta"]["short"] for r in all_results.values() if r["found"]]
-    no_provision = [r["meta"]["short"] for r in all_results.values() if not r["found"]]
-    # Establishment-size / service gating, computed BEFORE the answer so the verdict respects the
-    # threshold that decides which Chapter applies — then reused as the applicability box below.
-    _topic = intake.topic(corrected_q)
-    _got   = st.session_state.pop("intake_got", None)
-    if _got is None:
-        _got = intake.facts_from_query(corrected_q)
-    _notes = intake.applicability(_topic, _got or {}) if _topic else []
-    # Below 300 workers, keep Chapter X prior-permission Sections out of the grounding entirely
-    # (filter a shallow copy so display/routing and the quote-verifier still see the full corpus;
-    # comparison keeps them — it is about what changed).
-    _excl = _excluded_ir_sections(_topic, _got or {})
-    _ir   = all_results.get("ir")
-    _rfp  = all_results
-    if _excl and _ir and _ir.get("found"):
-        _rfp = {**all_results,
-                "ir": {**_ir, "chunks": [c for c in _ir["chunks"] if c.get("num") not in _excl]}}
-    user_msg     = build_prompt(raw_q, _rfp, applicability=_notes)
-    is_compare   = bool(sources) and (force_compare or _is_comparison(corrected_q))
-
     with st.chat_message("assistant", avatar="⚖️"):
         if corrections:
             st.markdown(_correction_html(corrections), unsafe_allow_html=True)
 
+        # One status box narrating the REAL pipeline stages (instead of two opaque
+        # spinners): expand → search → the actual provisions being read → draft →
+        # verify. Every label is derived from work that is genuinely happening.
+        with st.status("Understanding your question…", expanded=False) as _stat:
+            _stat.update(label="Expanding into statutory search terms…")
+            extra_terms = analyze_query(raw_q)           # legal keywords; "" if offline/error
+            _stat.update(label="Searching the four Labour Codes…")
+            # Route from the original query; the expansion only sharpens ranking and may add a
+            # missed code — it can never knock the relevant code below the routing gate.
+            all_results = corpus.search_all(LOADED, corrected_q, k=8, boost=extra_terms)
+
+            sources      = [r["meta"]["short"] for r in all_results.values() if r["found"]]
+            no_provision = [r["meta"]["short"] for r in all_results.values() if not r["found"]]
+            # Establishment-size / service gating, computed BEFORE the answer so the verdict
+            # respects the threshold that decides which Chapter applies — then reused as the
+            # applicability box below.
+            _topic = intake.topic(corrected_q)
+            _got   = st.session_state.pop("intake_got", None)
+            if _got is None:
+                _got = intake.facts_from_query(corrected_q)
+            _notes = intake.applicability(_topic, _got or {}) if _topic else []
+            # Below 300 workers, keep Chapter X prior-permission Sections out of the grounding
+            # entirely (filter a shallow copy so display/routing and the quote-verifier still
+            # see the full corpus; comparison keeps them — it is about what changed).
+            _excl = _excluded_ir_sections(_topic, _got or {})
+            _ir   = all_results.get("ir")
+            _rfp  = all_results
+            if _excl and _ir and _ir.get("found"):
+                _rfp = {**all_results,
+                        "ir": {**_ir,
+                               "chunks": [c for c in _ir["chunks"] if c.get("num") not in _excl]}}
+            user_msg   = build_prompt(raw_q, _rfp, applicability=_notes)
+            is_compare = bool(sources) and (force_compare or _is_comparison(corrected_q))
+
+            if not sources:
+                names = " · ".join(e["meta"]["short"] for e in LOADED.values())
+                data  = {"_raw": (
+                    f"No relevant provisions found across **{names}** for this query. "
+                    "Try rephrasing or ask about a specific Section or topic."
+                )}
+                _stat.update(label="No matching provisions found", state="complete")
+            else:
+                _top = [f"{c['label']} — {(c.get('title') or '').strip()} ({r['meta']['short']})"
+                        if (c.get('title') or '').strip() else f"{c['label']} ({r['meta']['short']})"
+                        for r in all_results.values() if r["found"] for c in r["chunks"][:1]]
+                if _top:
+                    _stat.update(label=f"Reading {_top[0]}"
+                                 + (f" and {len(_top) - 1} more provisions…"
+                                    if len(_top) > 1 else "…"))
+                if is_compare:
+                    _stat.update(label="Comparing the old Act with the new Code…")
+                    data = generate_comparison(build_comparison_prompt(corrected_q, all_results))
+                else:
+                    _stat.update(label="Drafting your answer…")
+                    data = generate_answer([{"role": "user", "content": user_msg}])
+                _stat.update(label="Verifying quotes verbatim against the Code…")
+                data = _verify_quotes(data)
+                _stat.update(label="Answer ready", state="complete")
+
         if sources or no_provision:
             st.markdown(_src_row_html(sources, no_provision), unsafe_allow_html=True)
-
-        if not sources:
-            names = " · ".join(e["meta"]["short"] for e in LOADED.values())
-            data  = {"_raw": (
-                f"No relevant provisions found across **{names}** for this query. "
-                "Try rephrasing or ask about a specific Section or topic."
-            )}
-        elif is_compare:
-            with st.spinner("Comparing the old Act with the new Code…"):
-                data = generate_comparison(build_comparison_prompt(corrected_q, all_results))
-            data = _verify_quotes(data)
-        else:
-            with st.spinner("Reading the provisions and drafting your answer…"):
-                data = generate_answer([{"role": "user", "content": user_msg}])
-            data = _verify_quotes(data)
         # Attach the (already-computed) size applicability + related-provision chips
         cross = []
         if isinstance(data, dict) and "_raw" not in data and not is_compare and _topic:
