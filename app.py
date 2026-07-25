@@ -1389,34 +1389,64 @@ def _parse_answer(text: str) -> dict:
 
 
 def _converse_json(system: str, user_text: str,
-                   max_tokens: int = 8192, temperature: float = 0.0) -> dict:
-    """Single non-streaming Converse call returning parsed JSON (or a raw-text fallback).
+                   max_tokens: int = 8192, temperature: float = 0.0,
+                   on_progress=None) -> dict:
+    """Single Converse call returning parsed JSON (or a raw-text fallback).
     Headroom (8192 tokens) lets the model reason through several issues without truncation.
     Temperature 0.0: this is a legal tool — the same question should give the same answer; a
-    warmer setting (was 0.25) made verdicts and citations drift between identical runs."""
+    warmer setting (was 0.25) made verdicts and citations drift between identical runs.
+
+    With `on_progress`, the call STREAMS (converse_stream) and invokes on_progress(n_words)
+    as tokens arrive — the answer is still parsed whole at the end (the JSON contract is
+    untouched), but the UI can show live drafting progress instead of a frozen spinner.
+    Any streaming failure falls back to one blocking call, so streaming can never make an
+    answer worse — only the progress display degrades."""
     client = get_bedrock_client()
     if not client:
         return {"_raw": "⚠️ Bedrock client error. Check secrets."}
     if not _has_key():
         return {"_raw": "⚠️ Add **AWS_BEARER_TOKEN_BEDROCK** and **AWS_REGION** in "
                         "*App → Settings → Secrets*."}
-    try:
-        resp = client.converse(
-            modelId=_model_id(),
-            system=[{"text": system}],
-            messages=[{"role": "user", "content": [{"text": user_text}]}],
-            inferenceConfig={"maxTokens": max_tokens, "temperature": temperature},
-        )
-        if resp.get("stopReason") == "max_tokens":
-            # The JSON answer was cut off mid-stream; parsing it would dump broken JSON at the
-            # user. Tell them to narrow the question instead.
-            return {"_raw": "⚠️ The answer was cut off before it finished (length limit). "
-                            "Please narrow the question or ask about one issue at a time."}
-        content = resp.get("output", {}).get("message", {}).get("content", [])
-        text = next((b["text"] for b in content if isinstance(b, dict) and "text" in b), "")
-        return _parse_answer(text)
-    except Exception as e:
-        return {"_raw": _friendly_bedrock_error(e)}
+    kwargs = dict(
+        modelId=_model_id(),
+        system=[{"text": system}],
+        messages=[{"role": "user", "content": [{"text": user_text}]}],
+        inferenceConfig={"maxTokens": max_tokens, "temperature": temperature},
+    )
+    text, stop_reason = None, None
+    if on_progress is not None:
+        try:
+            stream = client.converse_stream(**kwargs)
+            parts, n_since = [], 0
+            for ev in stream["stream"]:
+                if "contentBlockDelta" in ev:
+                    parts.append(ev["contentBlockDelta"]["delta"].get("text", ""))
+                    n_since += 1
+                    if n_since >= 8:             # throttle UI updates (~every 8 chunks)
+                        n_since = 0
+                        try:
+                            on_progress(sum(p.count(" ") for p in parts))
+                        except Exception:
+                            pass
+                elif "messageStop" in ev:
+                    stop_reason = ev["messageStop"].get("stopReason")
+            text = "".join(parts)
+        except Exception:
+            text = None                          # fall through to one blocking retry
+    if text is None:
+        try:
+            resp = client.converse(**kwargs)
+            stop_reason = resp.get("stopReason")
+            content = resp.get("output", {}).get("message", {}).get("content", [])
+            text = next((b["text"] for b in content if isinstance(b, dict) and "text" in b), "")
+        except Exception as e:
+            return {"_raw": _friendly_bedrock_error(e)}
+    if stop_reason == "max_tokens":
+        # The JSON answer was cut off mid-stream; parsing it would dump broken JSON at the
+        # user. Tell them to narrow the question instead.
+        return {"_raw": "⚠️ The answer was cut off before it finished (length limit). "
+                        "Please narrow the question or ask about one issue at a time."}
+    return _parse_answer(text)
 
 
 # A "compliant" headline must never sit above an unmet or unconfirmed issue. The model classifies
@@ -1456,14 +1486,15 @@ def _reconcile_verdict(data: dict) -> dict:
     return data
 
 
-def generate_answer(messages: list[dict]) -> dict:
+def generate_answer(messages: list[dict], on_progress=None) -> dict:
     """Structured single answer (verdict / info)."""
-    return _reconcile_verdict(_converse_json(SYSTEM, messages[-1]["content"]))
+    return _reconcile_verdict(
+        _converse_json(SYSTEM, messages[-1]["content"], on_progress=on_progress))
 
 
-def generate_comparison(user_text: str) -> dict:
+def generate_comparison(user_text: str, on_progress=None) -> dict:
     """Old-Act vs new-Code 'what changed' comparison."""
-    return _converse_json(COMPARISON_SYSTEM, user_text)
+    return _converse_json(COMPARISON_SYSTEM, user_text, on_progress=on_progress)
 
 
 QUERY_REWRITE_SYSTEM = """You turn an HR manager's question or situation into a compact set of SEARCH
@@ -2552,8 +2583,15 @@ if st.session_state.pending:
         # spinners): expand → search → the actual provisions being read → draft →
         # verify. Every label is derived from work that is genuinely happening.
         with st.status("Understanding your question…", expanded=False) as _stat:
-            _stat.update(label="Expanding into statutory search terms…")
-            extra_terms = analyze_query(raw_q)           # legal keywords; "" if offline/error
+            if corpus.get_config().mode == "lexical":
+                # Keyword-only fallback: the LLM rewrite genuinely helps paraphrases here.
+                _stat.update(label="Expanding into statutory search terms…")
+                extra_terms = analyze_query(raw_q)       # legal keywords; "" if offline/error
+            else:
+                # Embeddings carry paraphrase matching: measured over all 32 GOLD+HARD eval
+                # cases in embeddings_primary mode, the rewrite changed recall in ZERO cases
+                # while costing ~2s serial (its own round trip + a second query embed).
+                extra_terms = ""
             _stat.update(label="Searching the four Labour Codes…")
             # Route from the original query; the expansion only sharpens ranking and may add a
             # missed code — it can never knock the relevant code below the routing gate.
@@ -2599,10 +2637,16 @@ if st.session_state.pending:
                                     if len(_top) > 1 else "…"))
                 if is_compare:
                     _stat.update(label="Comparing the old Act with the new Code…")
-                    data = generate_comparison(build_comparison_prompt(corrected_q, all_results))
+                    data = generate_comparison(
+                        build_comparison_prompt(corrected_q, all_results),
+                        on_progress=lambda w: _stat.update(
+                            label=f"Comparing old and new law… {w:,} words drafted"))
                 else:
                     _stat.update(label="Drafting your answer…")
-                    data = generate_answer([{"role": "user", "content": user_msg}])
+                    data = generate_answer(
+                        [{"role": "user", "content": user_msg}],
+                        on_progress=lambda w: _stat.update(
+                            label=f"Drafting your answer… {w:,} words so far"))
                 _stat.update(label="Verifying quotes verbatim against the Code…")
                 data = _verify_quotes(data)
                 _stat.update(label="Answer ready", state="complete")
