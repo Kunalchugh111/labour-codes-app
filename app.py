@@ -645,11 +645,106 @@ ul.lc-applies-list li::before {
 }
 ul.lc-applies-list li:last-child { margin-bottom: 0; }
 
+/* Pipeline progress pill — the chevron-free st.status replacement */
+.lc-stage {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-size: 12.5px; font-weight: 600; letter-spacing: .01em;
+  color: var(--indigo-3); background: var(--indigo-bg);
+  border: 1px solid var(--indigo-border); border-radius: 999px;
+  padding: 8px 18px; margin: 2px 0 10px;
+  animation: fadeIn .25s var(--ease) both;
+}
+.lc-stage-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--indigo);
+  flex: 0 0 auto; animation: breathe 1.5s ease-in-out infinite;
+}
+
 /* Intake clarifying card + cross-reference chips */
+.lc-intake-label {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 10px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--indigo); margin-bottom: 9px;
+}
+.lc-intake-label::before { content: "✦"; font-size: 9px; opacity: .7; letter-spacing: 0; }
+.lc-intake-label::after {
+  content: ""; flex: 1; height: 1px;
+  background: linear-gradient(90deg, var(--indigo-border), transparent);
+}
 .lc-intake-head { font-size: 14.5px; font-weight: 600; color: var(--ink-2); margin-bottom: 6px; }
 .lc-intake-q {
   font-family: 'Playfair Display', serif; font-style: italic;
-  color: var(--slate-3); font-size: 13.5px; margin-bottom: 12px;
+  color: var(--slate-3); font-size: 13.5px; margin-bottom: 4px;
+}
+
+/* The clarifying card itself: a designed panel instead of bare widgets. */
+[class*="st-key-intake_card"] {
+  background: linear-gradient(135deg, var(--white) 0%, var(--parchment) 130%);
+  border: 1px solid var(--indigo-border);
+  border-left: 3px solid var(--indigo-2);
+  border-radius: 14px;
+  padding: 18px 20px 16px;
+  box-shadow: var(--s1);
+  animation: fadeUp .35s var(--ease) both;
+}
+/* Each question's label -> small-caps eyebrow */
+[class*="st-key-intake_card"] [data-testid="stWidgetLabel"] p {
+  font-size: 10px !important; font-weight: 800 !important;
+  letter-spacing: .14em !important; text-transform: uppercase !important;
+  color: var(--slate-2) !important;
+}
+/* Options -> selectable pill chips (hide baseweb's radio circle; select via :has) */
+[class*="st-key-intake_card"] [role="radiogroup"] {
+  gap: 8px !important; flex-wrap: wrap !important; padding-bottom: 4px;
+}
+[class*="st-key-intake_card"] label[data-baseweb="radio"] {
+  background: var(--white);
+  border: 1px solid var(--slate-5);
+  border-radius: 999px;
+  padding: 7px 15px !important;
+  margin: 0 !important;
+  box-shadow: var(--s1);
+  cursor: pointer;
+  transition: border-color .18s var(--ease), background .18s var(--ease),
+              transform .18s var(--ease), box-shadow .18s var(--ease);
+}
+[class*="st-key-intake_card"] label[data-baseweb="radio"] > div:first-child {
+  display: none !important;              /* the radio circle — the pill IS the control */
+}
+[class*="st-key-intake_card"] label[data-baseweb="radio"] p {
+  font-size: 12.5px !important; font-weight: 500 !important; color: var(--ink-2) !important;
+}
+[class*="st-key-intake_card"] label[data-baseweb="radio"]:hover {
+  border-color: var(--indigo) !important;
+  background: var(--indigo-bg);
+  transform: translateY(-1px);
+  box-shadow: var(--s2);
+}
+[class*="st-key-intake_card"] label[data-baseweb="radio"]:has(input:checked) {
+  background: var(--grad-indigo);
+  border-color: var(--indigo);
+  box-shadow: 0 4px 14px rgba(79,91,213,.30);
+}
+[class*="st-key-intake_card"] label[data-baseweb="radio"]:has(input:checked) p {
+  color: #fff !important; font-weight: 600 !important;
+}
+[class*="st-key-intake_go"] button { white-space: nowrap !important; }
+/* Skip -> a quiet ghost link beside the primary CTA */
+[class*="st-key-intake_skip"] button {
+  white-space: nowrap !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: var(--slate-2) !important;
+  font-size: 12.5px !important;
+  text-decoration: underline dotted var(--slate-4) !important;
+  text-underline-offset: 4px !important;
+  padding: 12px 6px !important;
+}
+[class*="st-key-intake_skip"] button:hover {
+  color: var(--indigo) !important;
+  background: transparent !important;
+  transform: none !important;
+  border: none !important;
 }
 .lc-xref-label {
   display: flex; align-items: center; gap: 10px;
@@ -2241,6 +2336,32 @@ def _render_followups(query, cross, show_compare, key_prefix, follow_ups=None):
                       on_click=_submit_compare, args=(query,))
 
 
+class _stage_status:
+    """A chevron-free replacement for st.status: one slim pulsing progress pill in a
+    placeholder, updated per pipeline stage, removed entirely when the answer lands
+    (st.status is an expander, so it always renders a dropdown arrow — this doesn't).
+    Drop-in for the calls we make: `with ... as s:` + s.update(label=..., state=...)."""
+
+    def __init__(self, label: str):
+        self._slot = st.empty()
+        self.update(label=label)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self._slot.empty()                     # the rendered answer replaces the pill
+        return False
+
+    def update(self, label: str = None, state: str = None, expanded=None):
+        if state == "complete":
+            self._slot.empty()
+        elif label:
+            self._slot.markdown(
+                f'<div class="lc-stage"><span class="lc-stage-dot"></span>{_esc(label)}</div>',
+                unsafe_allow_html=True)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # ── HERO + SEARCH SECTION ────────────────────────────────────────────────────
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2499,18 +2620,23 @@ for _i, msg in enumerate(st.session_state.messages):
 if st.session_state.intake and not st.session_state.pending:
     _ik = st.session_state.intake
     with st.chat_message("assistant", avatar="⚖️"):
-        st.markdown(
-            '<div class="lc-intake-head">A couple of quick details so the verdict is precise — '
-            'or skip and I\'ll answer in general terms.</div>'
-            f'<div class="lc-intake-q">“{_esc(_ik["q"])}”</div>',
-            unsafe_allow_html=True)
-        for _fact in _ik["needed"]:
-            st.radio(_fact["q"], [o[0] for o in _fact["opts"]],
-                     key=f"intake_{_fact['key']}", index=None, horizontal=True)
-        _b1, _b2, _ = st.columns([1.1, 1.5, 2.4])
-        _b1.button("Get my answer", type="primary", key="intake_go", on_click=_finalize_intake)
-        _b2.button("Skip — answer generally", key="intake_skip",
-                   on_click=_finalize_intake, args=(True,))
+        # Keyed container so the stylesheet can turn the bare radios into selectable
+        # chips and dress this block as a designed card (see .st-key-intake_card rules).
+        with st.container(key="intake_card"):
+            st.markdown(
+                '<div class="lc-intake-label">A quick check before I answer</div>'
+                '<div class="lc-intake-head">Two details make the verdict precise — '
+                'or skip and I\'ll answer in general terms.</div>'
+                f'<div class="lc-intake-q">“{_esc(_ik["q"])}”</div>',
+                unsafe_allow_html=True)
+            for _fact in _ik["needed"]:
+                st.radio(_fact["q"], [o[0] for o in _fact["opts"]],
+                         key=f"intake_{_fact['key']}", index=None, horizontal=True)
+            _b1, _b2, _ = st.columns([1.5, 1.6, 1.9])
+            _b1.button("Get my answer", type="primary", key="intake_go",
+                       on_click=_finalize_intake)
+            _b2.button("Skip — answer generally", key="intake_skip",
+                       on_click=_finalize_intake, args=(True,))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2579,10 +2705,12 @@ if st.session_state.pending:
         if corrections:
             st.markdown(_correction_html(corrections), unsafe_allow_html=True)
 
-        # One status box narrating the REAL pipeline stages (instead of two opaque
+        # One slim progress pill narrating the REAL pipeline stages (instead of two opaque
         # spinners): expand → search → the actual provisions being read → draft →
-        # verify. Every label is derived from work that is genuinely happening.
-        with st.status("Understanding your question…", expanded=False) as _stat:
+        # verify. Every label is derived from work that is genuinely happening. A custom
+        # placeholder (not st.status) so there's no expander chevron/dropdown — just a
+        # clean pulsing line that vanishes when the answer lands.
+        with _stage_status("Understanding your question…") as _stat:
             if corpus.get_config().mode == "lexical":
                 # Keyword-only fallback: the LLM rewrite genuinely helps paraphrases here.
                 _stat.update(label="Expanding into statutory search terms…")
