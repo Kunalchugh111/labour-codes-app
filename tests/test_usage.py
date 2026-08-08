@@ -46,6 +46,28 @@ def test_password_sha256():
     assert not app._password_ok(h, h)
 
 
+# ── login-identifier resolution (username OR email, forgivingly typed) ────────
+def test_resolve_user():
+    users = {"rohit": "pw", "priya@gmail.com": "pw2"}
+    assert app._resolve_user("rohit", users) == "rohit"
+    assert app._resolve_user("  rohit  ", users) == "rohit"          # stray spaces
+    assert app._resolve_user("Priya@Gmail.COM", users) == "priya@gmail.com"   # email case
+    assert app._resolve_user("ROHIT", users) == "rohit"
+    assert app._resolve_user("nobody", users) is None
+    assert app._resolve_user("", users) is None
+    assert app._resolve_user(None, users) is None
+
+
+def test_auth_users_would_skip_unquoted_email_tables():
+    # An unquoted email key parses as a nested table {"a": {"b@c": {"com": "pw"}}} —
+    # _auth_users keeps only string values, so such an entry is dropped, not fatal.
+    # (Exercise the same filter _auth_users applies, without needing st.secrets.)
+    raw = {"rohit": "pw", "a": {"b@c": {"com": "pw"}}}
+    filtered = {str(k): v for k, v in raw.items() if isinstance(v, str)}
+    assert filtered == {"rohit": "pw"}
+    assert app._resolve_user("a", filtered) is None
+
+
 # ── event log ─────────────────────────────────────────────────────────────────
 def test_log_and_question_count():
     _reset_db()
@@ -82,6 +104,27 @@ def test_recent_newest_first():
     ev = usage.recent(3)
     assert len(ev) == 3
     assert [e["detail"] for e in ev] == ["q4", "q3", "q2"]
+
+
+def test_all_events_complete_and_oldest_first():
+    _reset_db()
+    for i in range(60):                              # beyond recent()'s 50-row cap
+        usage.log("u", "question", f"q{i}")
+    ev = usage.all_events()
+    assert len(ev) == 60
+    assert ev[0]["detail"] == "q0" and ev[-1]["detail"] == "q59"
+
+
+def test_usage_csvs():
+    _reset_db()
+    usage.log("priya@gmail.com", "login")
+    usage.log("priya@gmail.com", "question", "when is gratuity payable?")
+    summary, activity = app._usage_csvs()
+    assert summary.splitlines()[0] == "user,questions,logins,last_activity"
+    assert "priya@gmail.com,1,1," in summary
+    assert activity.splitlines()[0] == "when,user,event,question"
+    assert "when is gratuity payable?" in activity
+    assert activity.count("priya@gmail.com") == 2    # one row per event
 
 
 def test_log_truncates_and_never_raises():

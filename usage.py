@@ -69,6 +69,17 @@ def stats() -> list[dict]:
         return []
 
 
+def all_events() -> list[dict]:
+    """Every event, oldest first — for the downloadable report (recent() caps at 50)."""
+    try:
+        with _conn() as con:
+            rows = con.execute(
+                "SELECT ts, user, event, detail FROM events ORDER BY id").fetchall()
+        return [{"ts": t, "user": u, "event": e, "detail": d} for t, u, e, d in rows]
+    except Exception:
+        return []
+
+
 def recent(limit: int = 50) -> list[dict]:
     """Latest events, newest first: [{ts, user, event, detail}]."""
     try:

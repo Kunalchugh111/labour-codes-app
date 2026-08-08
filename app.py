@@ -1307,10 +1307,28 @@ except Exception:
 
 
 def _auth_users() -> dict:
+    """The [users] table, keeping only string-valued entries. An email key someone forgot
+    to quote ('a@b.com = "pw"' instead of '"a@b.com" = "pw"') parses as a NESTED TOML
+    table, not a string — skip those so one bad line can't lock every user out."""
     try:
-        return dict(st.secrets.get("users", {}))
+        return {str(k): v for k, v in dict(st.secrets.get("users", {})).items()
+                if isinstance(v, str)}
     except Exception:
         return {}
+
+
+def _resolve_user(identifier: str, users: dict):
+    """Map what the visitor typed to the canonical [users] key, or None. Whitespace is
+    trimmed and matching is case-insensitive (emails ARE case-insensitive, and visitors
+    type 'Priya@Gmail.com'); the canonical key is returned so usage counts aggregate
+    under one spelling."""
+    ident = str(identifier or "").strip()
+    if not ident:
+        return None
+    if ident in users:
+        return ident
+    low = ident.lower()
+    return next((k for k in users if k.lower() == low), None)
 
 
 def _admins() -> list:
@@ -1343,6 +1361,24 @@ def _fmt_ts(ts) -> str:
     if not ts:
         return "—"
     return datetime.fromtimestamp(float(ts), _IST).strftime("%d %b %Y, %H:%M")
+
+
+def _usage_csvs() -> tuple[str, str]:
+    """(summary_csv, activity_csv) for the admin download buttons: the per-user rollup
+    and the complete event log, Excel-friendly."""
+    import csv
+    import io
+    s = io.StringIO()
+    w = csv.writer(s)
+    w.writerow(["user", "questions", "logins", "last_activity"])
+    for r in usage.stats():
+        w.writerow([r["user"], r["questions"], r["logins"], _fmt_ts(r["last_seen"])])
+    a = io.StringIO()
+    w = csv.writer(a)
+    w.writerow(["when", "user", "event", "question"])
+    for e in usage.all_events():
+        w.writerow([_fmt_ts(e["ts"]), e["user"], e["event"], e["detail"]])
+    return s.getvalue(), a.getvalue()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2599,17 +2635,18 @@ for key, default in [
 
 
 def _do_login():
-    u = str(st.session_state.get("login_user", "")).strip()
+    typed = str(st.session_state.get("login_user", "")).strip()
     p = st.session_state.get("login_pass", "")
     users = _auth_users()
-    if u in users and _password_ok(users[u], p):
-        st.session_state.auth_user = u
+    u = _resolve_user(typed, users)
+    if u is not None and _password_ok(users[u], p):
+        st.session_state.auth_user = u            # canonical key, not what was typed
         st.session_state.auth_error = ""
         st.session_state.login_pass = ""          # never keep the password in state
         usage.log(u, "login")
     else:
-        st.session_state.auth_error = "Wrong username or password — try again."
-        usage.log(u or "(blank)", "login_failed")
+        st.session_state.auth_error = "Wrong username/email or password — try again."
+        usage.log(typed or "(blank)", "login_failed")
 
 
 def _do_logout():
@@ -2765,9 +2802,10 @@ if _auth_users() and not st.session_state.auth_user:
     with st.container(key="login_card"):
         st.markdown(
             '<div class="lc-intake-label">Sign in</div>'
-            '<div class="lc-intake-head">Enter your credentials to use the assistant.</div>',
+            '<div class="lc-intake-head">Enter the username or email and password you were '
+            'given to use the assistant.</div>',
             unsafe_allow_html=True)
-        st.text_input("Username", key="login_user", autocomplete="username")
+        st.text_input("Username or email", key="login_user", autocomplete="username")
         st.text_input("Password", key="login_pass", type="password",
                       autocomplete="current-password")
         st.button("Sign in", type="primary", key="login_go", on_click=_do_login)
@@ -2807,6 +2845,15 @@ if st.session_state.auth_user:
                     "When": _fmt_ts(e["ts"]), "User": e["user"], "Event": e["event"],
                     "Question": (e["detail"][:80] + "…") if len(e["detail"]) > 80 else e["detail"],
                 } for e in _ev]), hide_index=True, use_container_width=True)
+                _sum_csv, _act_csv = _usage_csvs()
+                _today = datetime.now(_IST).strftime("%Y%m%d")
+                _d1, _d2, _ = st.columns([1.4, 1.4, 1.6])
+                _d1.download_button("⬇ Summary report (CSV)", _sum_csv,
+                                    file_name=f"usage-summary-{_today}.csv",
+                                    mime="text/csv", key="dl_summary")
+                _d2.download_button("⬇ Full activity (CSV)", _act_csv,
+                                    file_name=f"usage-activity-{_today}.csv",
+                                    mime="text/csv", key="dl_activity")
             else:
                 st.markdown("No activity recorded yet.")
 
