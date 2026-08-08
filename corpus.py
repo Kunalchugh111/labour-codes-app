@@ -269,6 +269,12 @@ _FOOTNOTE_RE = re.compile(
     r"(?m)^\s*\d{1,3}\.\s+.*\b(?:Subs\.|Ins\.|ibid|w\.e\.f\.|by Act\s+\d|by Reg\.|"
     r"omitted|substituted|inserted|re-lettered|re-numbered|The words|The proviso|"
     r"The figures|The brackets|The Explanation|s\.\s*\d+,\s*for).*$")
+# Inline amendment markers in consolidated prints — '4[twenty-six weeks …' flags text a later
+# Act substituted. Left in place they made the model read the CURRENT text as "an amendment"
+# and reconstruct the pre-amendment wording from memory (it reported the Maternity Benefit
+# Act's 12 weeks instead of the 26 weeks the supplied text says). Strip the marker, keep the
+# text: what remains reads as the Act as it stood at repeal, which is the comparison baseline.
+_AMEND_MARK_RE = re.compile(r"\d{1,3}\[")
 
 
 def _strip_preamble(text: str) -> str:
@@ -321,7 +327,7 @@ def parse_doc(text, kind, titles=None, is_old=False):
         # parsed (scoring pre-scrub picked starts whose best headings the scrub then deleted).
         # It also runs before the schedule split below: the TOC lists 'THE FIRST SCHEDULE'
         # too, and cutting at the TOC mention treated the whole body as schedule tail.
-        text = _skip_front_matter(_FOOTNOTE_RE.sub("", _strip_preamble(text)))
+        text = _skip_front_matter(_AMEND_MARK_RE.sub("", _FOOTNOTE_RE.sub("", _strip_preamble(text))))
     label = "Section" if kind == "code" else "Rule"
     sched_match = re.search(r"THE\s+[A-Z]+\s+SCHEDULE", text)
     body = text[: sched_match.start()] if sched_match else text
@@ -1121,28 +1127,28 @@ def lookup_title(corpus_dict: dict, citation: str):
 _MAX_CHUNK_CHARS = 3000
 
 
-def _trim(text: str, query: str = "") -> str:
-    """Cap a chunk at _MAX_CHUNK_CHARS. A blind head-cut buries the answer when the
+def _trim(text: str, query: str = "", cap: int = _MAX_CHUNK_CHARS) -> str:
+    """Cap a chunk at `cap` chars. A blind head-cut buries the answer when the
     relevant passage sits deep in a long Section (definitions, §50, §13…), so when a
     query is given we keep the WINDOW around the best cluster of query terms instead."""
-    if len(text) <= _MAX_CHUNK_CHARS:
+    if len(text) <= cap:
         return text
     terms = [t for t in _terms(query) if len(t) >= 4] if query else []
     low = text.lower()
     hits = sorted({low.find(t) for t in terms if low.find(t) != -1})
-    if hits and hits[0] >= _MAX_CHUNK_CHARS:        # relevant text is past a plain head-cut
+    if hits and hits[0] >= cap:                     # relevant text is past a plain head-cut
         centre = hits[len(hits) // 2]
-        half = _MAX_CHUNK_CHARS // 2
+        half = cap // 2
         start = max(0, centre - half)
         start = max(0, text.rfind(". ", 0, start) + 1) or start
-        window = text[start:start + _MAX_CHUNK_CHARS]
+        window = text[start:start + cap]
         last_stop = window.rfind(". ")
-        if last_stop > _MAX_CHUNK_CHARS // 2:
+        if last_stop > cap // 2:
             window = window[:last_stop + 1]
         return "[…] " + window.strip() + " […]"
-    cut = text[:_MAX_CHUNK_CHARS]
+    cut = text[:cap]
     last_stop = max(cut.rfind(". "), cut.rfind(".\n"))
-    return (cut[:last_stop + 1] if last_stop > _MAX_CHUNK_CHARS // 2 else cut) + " [...]"
+    return (cut[:last_stop + 1] if last_stop > cap // 2 else cut) + " [...]"
 
 
 def _hdr(c: dict) -> str:
@@ -1151,10 +1157,16 @@ def _hdr(c: dict) -> str:
 
 
 def render_chunks(picks: list[dict], query: str = "") -> str:
-    # A focused definition chunk is already pinpointed — never window-trim it.
-    return "\n\n".join(
-        f"===== {_hdr(c)} =====\n{c['text'] if c.get('_definition') else _trim(c['text'], query)}"
-        for c in picks)
+    # A focused definition chunk is already pinpointed — never window-trim it. A _pin chunk is
+    # a comparison topic's CORE provision, so it gets DOUBLE the normal cap — the standard cap
+    # dropped the very clause being compared (the Maternity Benefit Act's twenty-six-weeks
+    # clause sat past §5's first sentence-aligned cut) — while still bounding the prompt.
+    def body(c):
+        if c.get("_definition"):
+            return c["text"]
+        return _trim(c["text"], query, cap=2 * _MAX_CHUNK_CHARS if c.get("_pin")
+                     else _MAX_CHUNK_CHARS)
+    return "\n\n".join(f"===== {_hdr(c)} =====\n{body(c)}" for c in picks)
 
 
 def render_all_results(all_results: dict, query: str = "") -> str:

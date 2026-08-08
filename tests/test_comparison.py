@@ -114,7 +114,11 @@ def test_old_act_key_provisions_carry_statute():
         ("ir", "industrial_disputes", "Section 25K", "one hundred"),   # old 100-worker gate
         ("ir", "industrial_disputes", "Section 25N", "prior permission"),
         ("ir", "industrial_disputes", "Section 22", "six weeks"),
-        ("ss", "maternity_benefit", "Section 5", "maternity benefit"),
+        # the consolidated (as-amended-2017) print: 26 weeks / 80 days, NOT the as-enacted
+        # 1961 figures (12 weeks / 160 days) — comparing against the pre-amendment print
+        # falsely credited the 2017 changes to the Codes
+        ("ss", "maternity_benefit", "Section 5", "twenty-six weeks"),
+        ("ss", "maternity_benefit", "Section 5", "eighty days"),
         ("wages", "payment_of_bonus", "Section 10", "8.33"),
         ("wages", "minimum_wages", "Section 3", "minimum rates of wages"),
         ("osh", "factories", "Section 59", "twice"),
@@ -127,6 +131,23 @@ def test_old_act_key_provisions_carry_statute():
         c = next((c for c in oa["chunks"] if c["label"] == lbl), None)
         assert c is not None, f"{slug} {lbl} missing"
         assert re.search(kw, c["text"], re.I), f"{slug} {lbl}: {kw!r} not in text"
+
+
+# ── topical comparisons must carry the topic's CORE provision on both sides ───
+def test_topical_prompt_pins_core_provisions():
+    cases = [  # (query, must-appear-in-PREVIOUS-half, must-appear-anywhere)
+        ("how has maternity benefit changed from the old law",
+         "twenty-six weeks", "Section 60"),                     # old §5 (as amended) + new §60
+        ("how has gratuity changed from the old law",
+         "The Payment of Gratuity Act, 1972 — Section 4", "Section 53"),
+        ("What changed for retrenchment from the old Industrial Disputes Act?",
+         "The Industrial Disputes Act, 1947 — Section 25N", "Section 77"),
+    ]
+    for q, old_needle, new_needle in cases:
+        prompt = app.build_comparison_prompt(q, corpus.search_all(app.LOADED, q, k=8))
+        old_half = prompt[prompt.find("=== PREVIOUS LAW"):]
+        assert old_needle in old_half, f"{q!r}: {old_needle!r} missing from previous-law half"
+        assert new_needle in prompt, f"{q!r}: {new_needle!r} missing"
 
 
 # ── a generic comparison must not depend on raw-query retrieval ───────────────

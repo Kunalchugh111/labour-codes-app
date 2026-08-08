@@ -1407,6 +1407,12 @@ RULES:
   supplied — BEFORE any peripheral or administrative change (insurance, nomination, registration).
 - "old"/"old_cite" come ONLY from the PREVIOUS-law text; "new"/"new_cite" ONLY from the
   CURRENT-law text. Never swap them.
+- The PREVIOUS-law text supplied is the repealed Act AS IT STOOD IMMEDIATELY BEFORE the Codes
+  replaced it — later amendments are already incorporated into it. Take every "old" figure from
+  that text as printed. NEVER reconstruct an earlier version of the Act from amendment history
+  or from memory (e.g. if the supplied Maternity Benefit Act text says twenty-six weeks, the
+  old position IS twenty-six weeks — a change made by an earlier amendment is NOT a change made
+  by the Codes, and reporting it as one overstates what changed).
 - Base every "old" on the supplied PREVIOUS-LAW text. If that text does not cover a point, do NOT
   assert the requirement is new or that "no equivalent existed" — the predecessor may simply not be
   among the supplied excerpts (e.g. provident fund, ESI and gratuity all existed under earlier Acts).
@@ -2022,16 +2028,66 @@ def build_prompt(query: str, all_results: dict, applicability=None) -> str:
     parts.append(f"=== QUESTION ===\n{query}")
     return "\n\n".join(parts)
 
+# Query → overview-topic pins for TOPICAL comparisons. The lexically-ranked search_old top-k
+# can drop the topic's CORE provision (the Maternity Benefit Act's §5 fell to rank 7 and the
+# model was left comparing against notice/records sections), so when the query names one of
+# the curated topics, its flagship old/new provisions are pinned into the grounding.
+_CMP_TOPIC_PINS = [
+    (re.compile(r"retrench|lay[\s-]?off|clos(?:e|ing|ure)|shut", re.I), 0),
+    (re.compile(r"strike|lock[\s-]?out", re.I), 1),
+    (re.compile(r"minimum wage|floor wage|\bwages?\b|salary", re.I), 2),
+    (re.compile(r"\bbonus", re.I), 3),
+    (re.compile(r"gratuity", re.I), 4),
+    (re.compile(r"maternity|pregnan|childbirth", re.I), 5),
+    (re.compile(r"working hours|overtime|\bleave\b|holiday", re.I), 6),
+]
+
+
+def _pinned_cmp_chunks(query: str) -> tuple[list, list]:
+    """(new_chunks, old_chunks) pinned for the overview topics the query names. Marked _pin so
+    they render UNTRIMMED — the core clause being compared must never fall to the trim cap."""
+    pin_new, pin_old = [], []
+    for pat, ti in _CMP_TOPIC_PINS:
+        if not pat.search(query):
+            continue
+        label, cid, new_lbls, old_map = _OVERVIEW_TOPICS[ti]
+        entry = LOADED.get(cid)
+        if not entry:
+            continue
+        pin_new += [{**c, "_pin": True} for c in _pick_chunks(entry["chunks"], new_lbls)]
+        for oa in entry.get("old_acts", []):
+            want = old_map.get(oa["meta"]["slug"])
+            if want:
+                pin_old += [{**c, "_pin": True} for c in _pick_chunks(oa["chunks"], want)]
+    return pin_new, pin_old
+
+
 def build_comparison_prompt(query: str, all_results: dict) -> str:
-    new_g = corpus.render_all_results(all_results, query)
-    olds = []
+    pin_new, pin_old = _pinned_cmp_chunks(query)
+    # Pins always win: the ranked copy of a pinned provision is dropped so the untrimmed pinned
+    # copy is the one the model reads (the ranked copy is trim-capped and can lose the clause).
+    pinned_keys = {(c["source"], c["label"]) for c in pin_new}
+    ranked = {cid: ({**r, "chunks": [c for c in r["chunks"]
+                                     if (c["source"], c["label"]) not in pinned_keys]}
+                    if r["found"] else r)
+              for cid, r in all_results.items()}
+    for r in ranked.values():
+        r["found"] = bool(r["chunks"])
+    new_g = corpus.render_all_results(ranked, query)
+    if pin_new:
+        new_g += "\n\n" + corpus.render_chunks(pin_new, query)
+    olds = list(pin_old)
+    seen_old = {(c["source"], c["label"]) for c in pin_old}
     for cid, r in all_results.items():
         if not r["found"]:
             continue
-        oc = corpus.search_old(LOADED[cid], query, k=6)
-        if oc:
-            olds.append(corpus.render_chunks(oc, query))
-    old_g = "\n\n".join(olds) if olds else "(No repealed-Act text found for this topic.)"
+        for c in corpus.search_old(LOADED[cid], query, k=6):
+            key = (c["source"], c["label"])
+            if key not in seen_old:
+                seen_old.add(key)
+                olds.append(c)
+    old_g = (corpus.render_chunks(olds, query) if olds
+             else "(No repealed-Act text found for this topic.)")
     return (f"=== CURRENT LAW (in force) ===\n{new_g}\n\n"
             f"=== PREVIOUS LAW (repealed Acts) ===\n{old_g}\n\n"
             f"=== QUESTION ===\n{query}")
@@ -2080,12 +2136,12 @@ def build_overview_comparison_prompt(query: str) -> tuple[str, list[str]]:
         entry = LOADED.get(cid)
         if not entry:
             continue
-        new_c = _pick_chunks(entry["chunks"], new_lbls)
+        new_c = [{**c, "_pin": True} for c in _pick_chunks(entry["chunks"], new_lbls)]
         old_c = []
         for oa in entry.get("old_acts", []):
             want = old_map.get(oa["meta"]["slug"])
             if want:
-                old_c += _pick_chunks(oa["chunks"], want)
+                old_c += [{**c, "_pin": True} for c in _pick_chunks(oa["chunks"], want)]
         # Fail-soft if a pinned provision vanishes from the corpus: fall back to topical search
         # so the block degrades to "best effort" instead of disappearing.
         if not new_c:
