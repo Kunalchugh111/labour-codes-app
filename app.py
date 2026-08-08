@@ -956,19 +956,78 @@ blockquote.lc-auth-quote.unverified {
   letter-spacing: .14em !important; text-transform: uppercase !important;
   color: var(--slate-2) !important;
 }
+/* The form itself is invisible chrome — the card provides the frame */
+[class*="st-key-login_card"] [data-testid="stForm"] {
+  border: none !important; padding: 0 !important; margin: 0 !important;
+  background: transparent !important; box-shadow: none !important;
+}
+/* ONE clean border on the outer baseweb wrapper; kill every inner border/background so
+   the field can't double-frame (Streamlit nests input containers). */
+[class*="st-key-login_card"] [data-baseweb="input"] {
+  border: 1.5px solid var(--slate-4) !important;
+  border-radius: 11px !important;
+  background: var(--white) !important;
+  overflow: hidden !important;
+  transition: border-color .18s var(--ease), box-shadow .18s var(--ease) !important;
+}
+[class*="st-key-login_card"] [data-baseweb="input"] > div,
+[class*="st-key-login_card"] [data-baseweb="base-input"] {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
 [class*="st-key-login_card"] input {
   font-family: 'DM Sans', sans-serif !important;
-  font-size: 14px !important;
+  font-size: 14.5px !important;
   color: var(--ink) !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 11px 14px !important;
 }
-[class*="st-key-login_card"] [data-baseweb="input"] {
-  border: 1px solid var(--slate-4) !important;
-  border-radius: 10px !important;
-  background: var(--white) !important;
+[class*="st-key-login_card"] input::placeholder {
+  color: var(--slate-3) !important; font-style: italic !important; font-weight: 300 !important;
 }
 [class*="st-key-login_card"] [data-baseweb="input"]:focus-within {
   border-color: var(--indigo) !important;
-  box-shadow: 0 0 0 3px rgba(79,91,213,.12) !important;
+  box-shadow: 0 0 0 4px rgba(79,91,213,.13) !important;
+}
+/* Streamlit's "Press Enter to submit form" hint collides with the eye icon — drop it */
+[class*="st-key-login_card"] [data-testid="InputInstructions"] {
+  display: none !important;
+}
+/* The show/hide-password eye — quiet slate, indigo on hover */
+[class*="st-key-login_card"] [data-baseweb="input"] button {
+  background: transparent !important; border: none !important; box-shadow: none !important;
+  color: var(--slate-3) !important; margin-right: 6px !important;
+}
+[class*="st-key-login_card"] [data-baseweb="input"] button:hover {
+  color: var(--indigo) !important; background: transparent !important;
+}
+[class*="st-key-login_card"] [data-baseweb="input"] button svg {
+  fill: currentColor !important;
+}
+/* Full-width gradient submit — same pill language as the rest of the app */
+[class*="st-key-login_card"] [data-testid="stFormSubmitButton"] button {
+  width: 100% !important;
+  background: var(--grad-indigo) !important;
+  color: #fff !important;
+  border: none !important;
+  border-radius: 999px !important;
+  font-weight: 600 !important;
+  font-size: 14px !important;
+  letter-spacing: .02em !important;
+  padding: 11px 0 !important;
+  margin-top: 4px !important;
+  text-align: center !important;
+  box-shadow: 0 8px 22px rgba(79,91,213,.30) !important;
+  transition: filter .18s var(--ease), transform .18s var(--ease),
+              box-shadow .18s var(--ease) !important;
+}
+[class*="st-key-login_card"] [data-testid="stFormSubmitButton"] button:hover {
+  filter: brightness(1.07) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 12px 30px rgba(79,91,213,.42) !important;
 }
 .lc-auth-fail {
   font-size: 12.5px; font-weight: 600; color: var(--red);
@@ -2805,13 +2864,19 @@ if _auth_users() and not st.session_state.auth_user:
             '<div class="lc-intake-head">Enter the username or email and password you were '
             'given to use the assistant.</div>',
             unsafe_allow_html=True)
-        st.text_input("Username or email", key="login_user", autocomplete="username")
-        st.text_input("Password", key="login_pass", type="password",
-                      autocomplete="current-password")
-        st.button("Sign in", type="primary", key="login_go", on_click=_do_login)
-        if st.session_state.auth_error:
-            st.markdown(f'<div class="lc-auth-fail">⚠ {_esc(st.session_state.auth_error)}</div>',
-                        unsafe_allow_html=True)
+        # A FORM, not bare inputs: pressing Enter submits, and both values are committed
+        # atomically before the callback runs — bare inputs needed a blur before the click,
+        # so typing the password and clicking straight away could sign in with a stale value.
+        with st.form("login_form", clear_on_submit=False, border=False):
+            st.text_input("Username or email", key="login_user", autocomplete="username",
+                          placeholder="e.g. rohit — or you@company.com")
+            st.text_input("Password", key="login_pass", type="password",
+                          autocomplete="current-password", placeholder="••••••••")
+            if st.session_state.auth_error:      # inside the form so it stays card-width
+                st.markdown(
+                    f'<div class="lc-auth-fail">⚠ {_esc(st.session_state.auth_error)}</div>',
+                    unsafe_allow_html=True)
+            st.form_submit_button("Sign in →", type="primary", on_click=_do_login)
     st.stop()
 
 # Account row — who is signed in, how many questions they've asked, sign-out,
