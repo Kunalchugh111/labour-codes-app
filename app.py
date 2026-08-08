@@ -2045,7 +2045,7 @@ def build_comparison_prompt(query: str, all_results: dict) -> str:
 _OVERVIEW_TOPICS = [
     ("Retrenchment & closure — Government-permission threshold, notice and compensation", "ir",
      ["Section 70", "Section 77"],
-     {"industrial_disputes": ["Section 25F", "Section 25K"]}),
+     {"industrial_disputes": ["Section 25F", "Section 25K", "Section 25N"]}),
     ("Strikes & lock-outs — notice requirements", "ir",
      ["Section 62"],
      {"industrial_disputes": ["Section 22", "Section 23"]}),

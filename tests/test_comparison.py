@@ -89,6 +89,46 @@ def test_overview_prompt_grounding():
     assert prompt.rstrip().endswith("what has changed from old laws")
 
 
+# ── every old Act must parse into SUBSTANTIVE provisions, not TOC lines ───────
+# The bug this pins: gazette front matter ('ARRANGEMENT OF SECTIONS' TOCs, amending-act
+# lists) mimics section headings, so 12 of 29 repealed Acts were chunked into bare
+# title lines ('4. Payment of gratuity.' — 23 chars) with the real body discarded, and
+# every comparison against them was grounded on nothing.
+def test_old_acts_parse_substantively():
+    import statistics
+    for cid, e in app.LOADED.items():
+        for oa in e["old_acts"]:
+            lens = [len(c["text"]) for c in oa["chunks"]]
+            slug = oa["meta"]["slug"]
+            assert lens, f"{slug}: no chunks parsed"
+            med = statistics.median(lens)
+            assert med >= 200, f"{slug}: median chunk {med} chars — TOC-chunked?"
+            assert max(lens) < 60_000, f"{slug}: {max(lens)}-char chunk — body swallowed whole"
+
+
+def test_old_act_key_provisions_carry_statute():
+    import re
+    checks = [  # (code, old-act slug, provision, text it must contain)
+        ("ss", "payment_of_gratuity", "Section 4", "fifteen days"),
+        ("ir", "industrial_disputes", "Section 25F", "one month"),
+        ("ir", "industrial_disputes", "Section 25K", "one hundred"),   # old 100-worker gate
+        ("ir", "industrial_disputes", "Section 25N", "prior permission"),
+        ("ir", "industrial_disputes", "Section 22", "six weeks"),
+        ("ss", "maternity_benefit", "Section 5", "maternity benefit"),
+        ("wages", "payment_of_bonus", "Section 10", "8.33"),
+        ("wages", "minimum_wages", "Section 3", "minimum rates of wages"),
+        ("osh", "factories", "Section 59", "twice"),
+        ("osh", "factories", "Section 79", "leave with wages"),
+        ("ss", "unorganised_workers_ss", "Section 3", "welfare"),
+        ("ss", "epf_misc_provisions", "Section 6", "contribution"),
+    ]
+    for cid, slug, lbl, kw in checks:
+        oa = next(o for o in app.LOADED[cid]["old_acts"] if o["meta"]["slug"] == slug)
+        c = next((c for c in oa["chunks"] if c["label"] == lbl), None)
+        assert c is not None, f"{slug} {lbl} missing"
+        assert re.search(kw, c["text"], re.I), f"{slug} {lbl}: {kw!r} not in text"
+
+
 # ── a generic comparison must not depend on raw-query retrieval ───────────────
 def test_overview_prompt_is_bounded():
     prompt, _ = app.build_overview_comparison_prompt("what has changed from old laws")
