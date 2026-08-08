@@ -1399,6 +1399,9 @@ Respond with a SINGLE JSON object and NOTHING else — no prose, no markdown, no
 
 RULES:
 - Give the 2-4 changes that matter most to HR. Be concrete: days, amounts, thresholds, percentages.
+  EXCEPTION — when the supplied grounding is organised into "### TOPIC:" blocks (a broad
+  "what changed overall" question), give ONE change per topic whose old and new texts actually
+  differ, in the order the topics appear; more than 4 changes is expected there.
 - LEAD with the change to the topic's CORE substantive rule (eligibility, amount/rate, threshold,
   notice/compensation) — comparing it against the matching previous-law provision when that text is
   supplied — BEFORE any peripheral or administrative change (insurance, nomination, registration).
@@ -1633,12 +1636,48 @@ def analyze_query(raw_q: str) -> str:
 
 
 _COMPARE_RE = re.compile(
-    r"\b(what changed|has changed|changed (?:from|since|in)|old act|old law|earlier law|"
-    r"previously|before the code|used to|compared to|comparison|difference|differ|"
-    r"new vs old|old vs new|replaced|repeal)\b", re.I)
+    r"\b(what (?:has |have )?chang(?:ed|es)|has chang(?:ed|es)|chang(?:ed|es) (?:from|since|in)|"
+    r"old acts?|old laws?|earlier laws?|previously|before the codes?|used to|compared to|"
+    r"comparison|difference|differ|new vs old|old vs new|replaced|repeal)\b", re.I)
 
 def _is_comparison(query: str) -> bool:
     return bool(_COMPARE_RE.search(query))
+
+
+# Words that carry NO topic in a comparison question — the question's own meta-language
+# ("what changed", "old laws", "new codes") plus generic filler. A comparison query whose
+# every token is in this set has nothing for retrieval to bite on: grounding it on the raw
+# query surfaces a grab-bag of unrelated Sections, and the model — correctly forbidden from
+# manufacturing differences — returns an empty comparison. Those queries take the curated
+# overview path instead (build_overview_comparison_prompt).
+_CMP_META_WORDS = frozenset("""
+a an the and or of in on for to from with under at by so that this these those there
+what which how why when where is are was were be been being s do does did done has have had
+can could will would should shall may might must
+i we me us my our you your they them it its he she his her
+change changes changed changing new old newer older earlier previous previously prior latest
+current recent now today recently
+law laws act acts code codes rule rules regulation regulations provision provisions
+amendment amendments reform reforms regime system framework
+labour labor india indian government central
+compare compared comparing comparison contrast difference differences differ different
+between versus vs against
+tell explain give show list summarise summarize summary overview brief detail details
+know understand happened please about regarding exactly really actually
+major key main big biggest important significant notable everything anything all any some
+employee employees worker workers workman workmen staff people
+employer employers company companies establishment establishments business firm hr manager managers
+repeal repealed replace replaced replacing subsumed since before after
+one ones four 4 2019 2020 year years
+""".split())
+
+
+def _is_generic_comparison(query: str) -> bool:
+    """True for a comparison question with no substantive topic ("what changed from the old
+    laws?") — every token is comparison meta-language or filler. Topical comparison questions
+    ("how has gratuity changed…") keep the normal retrieval-grounded path."""
+    toks = re.findall(r"[a-z0-9]+", query.lower())
+    return bool(toks) and all(t in _CMP_META_WORDS for t in toks)
 
 
 def _verify_quotes(data: dict) -> dict:
@@ -1997,6 +2036,77 @@ def build_comparison_prompt(query: str, all_results: dict) -> str:
             f"=== PREVIOUS LAW (repealed Acts) ===\n{old_g}\n\n"
             f"=== QUESTION ===\n{query}")
 
+
+# The headline old→new changes, pinned to their flagship provisions so a broad "what changed?"
+# question is grounded on ALIGNED old/new pairs rather than whatever chunks happen to contain
+# the words "old"/"law"/"changed". Each entry: (topic label, code id, new-Code provision
+# labels, {old-Act slug: provision labels}). Every pinned label is verified by
+# tests/test_comparison.py, so a corpus change can't silently empty a topic.
+_OVERVIEW_TOPICS = [
+    ("Retrenchment & closure — Government-permission threshold, notice and compensation", "ir",
+     ["Section 70", "Section 77"],
+     {"industrial_disputes": ["Section 25F", "Section 25K"]}),
+    ("Strikes & lock-outs — notice requirements", "ir",
+     ["Section 62"],
+     {"industrial_disputes": ["Section 22", "Section 23"]}),
+    ("Minimum wages & the new floor wage", "wages",
+     ["Section 5", "Section 6", "Section 9"],
+     {"minimum_wages": ["Section 3", "Section 5"]}),
+    ("Annual bonus — eligibility and minimum", "wages",
+     ["Section 26"],
+     {"payment_of_bonus": ["Section 8", "Section 10"]}),
+    ("Gratuity", "ss",
+     ["Section 53"],
+     {"payment_of_gratuity": ["Section 4"]}),
+    ("Maternity benefit", "ss",
+     ["Section 60"],
+     {"maternity_benefit": ["Section 5"]}),
+    ("Working hours, overtime & annual leave", "osh",
+     ["Section 25", "Section 27", "Section 32"],
+     {"factories": ["Section 54", "Section 59", "Section 79"]}),
+]
+
+
+def _pick_chunks(chunks: list, labels: list) -> list:
+    by = {c["label"]: c for c in chunks}
+    return [by[l] for l in labels if l in by]
+
+
+def build_overview_comparison_prompt(query: str) -> tuple[str, list[str]]:
+    """Grounding for a BROAD comparison question ("what changed from the old laws?"), organised
+    as per-topic old/new pairs from _OVERVIEW_TOPICS. Returns (prompt, source shorts)."""
+    parts, shorts = [], []
+    for label, cid, new_lbls, old_map in _OVERVIEW_TOPICS:
+        entry = LOADED.get(cid)
+        if not entry:
+            continue
+        new_c = _pick_chunks(entry["chunks"], new_lbls)
+        old_c = []
+        for oa in entry.get("old_acts", []):
+            want = old_map.get(oa["meta"]["slug"])
+            if want:
+                old_c += _pick_chunks(oa["chunks"], want)
+        # Fail-soft if a pinned provision vanishes from the corpus: fall back to topical search
+        # so the block degrades to "best effort" instead of disappearing.
+        if not new_c:
+            new_c = corpus.search(entry, label, k=2)
+        if not old_c:
+            old_c = corpus.search_old(entry, label, k=2)
+        if not new_c or not old_c:
+            continue                      # an overview topic is only useful with BOTH sides
+        short = entry["meta"]["short"]
+        if short not in shorts:
+            shorts.append(short)
+        parts.append(f"### TOPIC: {label}\n"
+                     f"--- CURRENT LAW (in force) ---\n{corpus.render_chunks(new_c, label)}\n"
+                     f"--- PREVIOUS LAW (repealed Act) ---\n{corpus.render_chunks(old_c, label)}")
+    head = ("The manager asked a BROAD question about what changed overall under the new Labour "
+            "Codes. The grounding below is organised by TOPIC; each topic pairs the CURRENT "
+            "Code text with the matching PREVIOUS (repealed-Act) text. Give one \"changes\" "
+            "entry per topic whose texts actually differ, in the order the topics appear; skip "
+            "a topic only if its two texts say the same thing.")
+    return (head + "\n\n" + "\n\n".join(parts) + f"\n\n=== QUESTION ===\n{query}", shorts)
+
 def _correction_html(corrections):
     # `o` is the raw user token (from q.split()) — escape both sides before they enter this
     # unsafe_allow_html block, or a crafted question injects HTML into the rendered page.
@@ -2162,11 +2272,34 @@ def _render_analysis(analysis: list):
 def render_answer(data: dict):
     """Render a structured answer as scannable cards (verdict / points / actions /
     collapsible authorities). Falls back to markdown for unstructured replies."""
-    if isinstance(data, dict) and data.get("type") == "comparison" and "_raw" not in data:
+    if isinstance(data, dict) and "_raw" not in data and (
+            data.get("type") == "comparison"
+            or (isinstance(data.get("changes"), list) and data.get("changes"))):
+        # Also route comparison-shaped answers whose "type" key the model dropped —
+        # they'd otherwise fall through every info/compliance section and render blank.
         render_comparison(data)
         return
     if not isinstance(data, dict) or "_raw" in data:
         st.markdown(data.get("_raw", "") if isinstance(data, dict) else str(data))
+        st.markdown(f'<div class="lc-disclaimer">{DISCLAIMER}</div>', unsafe_allow_html=True)
+        return
+
+    # Safety net: valid JSON matching NEITHER answer schema (no known text, list, or verdict
+    # key) must never render as an empty card — show whatever prose the model returned.
+    _text_keys = ("direct_answer", "restatement", "answer", "headline")
+    _list_keys = ("analysis", "key_points", "requirements", "actions", "authorities")
+    _verd = data.get("verdict")
+    if (not any(str(data.get(k) or "").strip() for k in _text_keys)
+            and not any(isinstance(data.get(k), list) and data.get(k) for k in _list_keys)
+            and not (isinstance(_verd, dict)
+                     and str(_verd.get("summary") or _verd.get("status") or "").strip())):
+        prose = [str(v).strip() for v in data.values()
+                 if isinstance(v, str) and str(v).strip()]
+        if prose:
+            st.markdown("\n\n".join(_esc(p) for p in prose))
+        else:
+            st.markdown("⚠️ The answer came back in an unexpected format — please try "
+                        "rephrasing the question.")
         st.markdown(f'<div class="lc-disclaimer">{DISCLAIMER}</div>', unsafe_allow_html=True)
         return
 
@@ -2746,7 +2879,18 @@ if st.session_state.pending:
                         "ir": {**_ir,
                                "chunks": [c for c in _ir["chunks"] if c.get("num") not in _excl]}}
             user_msg   = build_prompt(raw_q, _rfp, applicability=_notes)
-            is_compare = bool(sources) and (force_compare or _is_comparison(corrected_q))
+            wants_cmp   = force_compare or _is_comparison(corrected_q)
+            generic_cmp = wants_cmp and _is_generic_comparison(corrected_q)
+            is_compare  = generic_cmp or (bool(sources) and wants_cmp)
+
+            cmp_prompt = None
+            if generic_cmp:
+                # A broad "what changed from the old laws?" has no topical keywords, so raw
+                # retrieval surfaces unrelated Sections on both sides and the model — rightly
+                # forbidden from manufacturing differences — used to come back empty. Ground it
+                # on the curated per-topic old/new pairs instead.
+                cmp_prompt, sources = build_overview_comparison_prompt(corrected_q)
+                no_provision = []
 
             if not sources:
                 names = " · ".join(e["meta"]["short"] for e in LOADED.values())
@@ -2759,16 +2903,23 @@ if st.session_state.pending:
                 _top = [f"{c['label']} — {(c.get('title') or '').strip()} ({r['meta']['short']})"
                         if (c.get('title') or '').strip() else f"{c['label']} ({r['meta']['short']})"
                         for r in all_results.values() if r["found"] for c in r["chunks"][:1]]
-                if _top:
+                if _top and not generic_cmp:
                     _stat.update(label=f"Reading {_top[0]}"
                                  + (f" and {len(_top) - 1} more provisions…"
                                     if len(_top) > 1 else "…"))
                 if is_compare:
-                    _stat.update(label="Comparing the old Act with the new Code…")
+                    _stat.update(label="Comparing the old Acts with the new Codes…"
+                                 if generic_cmp else
+                                 "Comparing the old Act with the new Code…")
                     data = generate_comparison(
-                        build_comparison_prompt(corrected_q, all_results),
+                        cmp_prompt if generic_cmp
+                        else build_comparison_prompt(corrected_q, all_results),
                         on_progress=lambda w: _stat.update(
                             label=f"Comparing old and new law… {w:,} words drafted"))
+                    if isinstance(data, dict) and "_raw" not in data:
+                        # The renderer routes on this key; a model that drops it must not
+                        # blank the answer.
+                        data["type"] = "comparison"
                 else:
                     _stat.update(label="Drafting your answer…")
                     data = generate_answer(

@@ -20,7 +20,8 @@ python3 -m pip install -q -r requirements.txt || \
 #    figures the app states AS LAW (gratuity / retrenchment / lay-off / overtime), so any
 #    regression should be visible at session start rather than shipped silently.
 echo "Running calculator unit tests…"
-if python3 tests/test_calculators.py 2>/dev/null && python3 tests/test_calculators_new.py 2>/dev/null; then
+if python3 tests/test_calculators.py 2>/dev/null && python3 tests/test_calculators_new.py 2>/dev/null \
+   && python3 tests/test_comparison.py 2>/dev/null; then
   echo "✅ calculator unit tests passed"
 else
   echo "‼️ calculator unit tests FAILED — the statutory amount calculators have regressed"
