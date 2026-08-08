@@ -6,3 +6,5 @@ __pycache__/
 documents/processed/embeddings.*.npz
 # Parsed-corpus snapshot; regenerated on any source change (see corpus._fingerprint)
 documents/processed/corpus_cache.json
+# Local login/usage event log (see usage.py)
+usage.db

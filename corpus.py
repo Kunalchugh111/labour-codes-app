@@ -126,6 +126,11 @@ def correct_query(q: str) -> tuple[str, list[tuple[str, str]]]:
 # numbered lists (repealed-rule lists, form fields, first-aid items) can't pose as rules.
 _HEAD_CODE = re.compile(r"(?m)^\s{0,4}(\d{1,3})([A-Z]{0,2})\.\s")
 _HEAD_RULE = re.compile(r"(?m)^\s{0,4}(\d{1,3})([A-Z]{0,2})\.\s+[A-Z][^\n]{0,160}?\.\s*-")
+# Old-Act gazette prints additionally: (a) prefix amended headings with a footnote marker —
+# "1[7. Labour Courts.—", "6[7B. National Tribunals.—" — and (b) sometimes space the dot —
+# "2 . Definitions.—". The 2020 Codes keep the strict _HEAD_CODE (their text feeds the
+# embedding index and must stay byte-identical).
+_HEAD_OLD = re.compile(r"(?m)^\s{0,4}(?:\d{1,2}\[)?(\d{1,3})([A-Z]{0,2})\s?\.\s")
 # A standalone "FORM-I" / "FORM-XXI." heading line — marks the start of the form templates.
 _FORMS_TAIL = re.compile(r"(?m)^\s*FORM[ -][IVXLCDM\d]+\.?\s*$")
 
@@ -134,7 +139,7 @@ def _split_numbered(text, kind="code"):
     """Split a body into (label, segment) per provision. Acceptance is monotonic with
     small-gap tolerance — a single missed/garbled heading never collapses the rest of the
     document into one giant chunk, and resets (lists that restart at 1) are ignored."""
-    pat = _HEAD_RULE if kind == "rules" else _HEAD_CODE
+    pat = {"rules": _HEAD_RULE, "old": _HEAD_OLD}.get(kind, _HEAD_CODE)
     # Rules headings carry a "Title.-" so they're trustworthy — tolerate big gaps (some
     # rule numbers go unmatched). Code/old-Act headings are barer, so stay conservative.
     max_gap = 25 if kind == "rules" else 3
@@ -183,7 +188,7 @@ def _extract_title(seg: str, kind: str):
     """Pull a provision's marginal title from its own text. Rules read 'N. Title.-'; old
     Acts read 'N. Title <newline/(1)> body'. Returns None when there's no clean heading
     (e.g. the 2020 Codes, whose titles come from the precomputed section_titles map)."""
-    head = re.sub(r"^\s*\d{1,3}[A-Z]{0,2}\.\s*", "", seg[:240], count=1).lstrip()
+    head = re.sub(r"^\s*(?:\d{1,2}\[)?\d{1,3}[A-Z]{0,2}\s?\.\s*", "", seg[:240], count=1).lstrip()
     if kind == "rules":
         m = re.match(r"([A-Z][^\n]{2,140}?)\.\s*-", head)
         return _clean_title(m.group(1)) if m else None
@@ -264,6 +269,12 @@ _FOOTNOTE_RE = re.compile(
     r"(?m)^\s*\d{1,3}\.\s+.*\b(?:Subs\.|Ins\.|ibid|w\.e\.f\.|by Act\s+\d|by Reg\.|"
     r"omitted|substituted|inserted|re-lettered|re-numbered|The words|The proviso|"
     r"The figures|The brackets|The Explanation|s\.\s*\d+,\s*for).*$")
+# Inline amendment markers in consolidated prints — '4[twenty-six weeks …' flags text a later
+# Act substituted. Left in place they made the model read the CURRENT text as "an amendment"
+# and reconstruct the pre-amendment wording from memory (it reported the Maternity Benefit
+# Act's 12 weeks instead of the 26 weeks the supplied text says). Strip the marker, keep the
+# text: what remains reads as the Act as it stood at repeal, which is the comparison baseline.
+_AMEND_MARK_RE = re.compile(r"\d{1,3}\[")
 
 
 def _strip_preamble(text: str) -> str:
@@ -278,6 +289,31 @@ def _strip_preamble(text: str) -> str:
     return text[m.end():] if m else text
 
 
+# A section-1 heading — each occurrence is a candidate start of the Act's real body.
+_S1_HEAD_RE = re.compile(r"(?m)^\s{0,4}(?:\d{1,2}\[)?1\s?\.\s")
+# A segment this long is a real statutory provision, not a table-of-contents line.
+_SUBSTANTIVE = 200
+
+
+def _skip_front_matter(text: str) -> str:
+    """Find where an old Act's real BODY starts. Gazette texts open with front matter whose
+    numbered lines mimic section headings — an 'ARRANGEMENT OF SECTIONS' TOC ('4. Payment of
+    gratuity.'), a 'LIST OF AMENDING ACTS' — so `_split_numbered` locked onto the TOC, emitted
+    title-line-only chunks, and rejected the real body (which restarts at 1) as a reset: 12 of
+    the 29 repealed Acts were grounded on TOC lines, not statute. Layouts vary (some have no
+    enacting clause, some no TOC marker), so instead of markers we TRY each section-1 heading
+    as a start offset and keep the parse that yields the most SUBSTANTIVE sections — the TOC
+    parse scores ~0, the body parse scores tens, so the body wins regardless of layout."""
+    starts = [0] + [m.start() for m in _S1_HEAD_RE.finditer(text)][:12]
+    best_start, best_score = 0, -1
+    for s in starts:
+        items = _split_numbered(text[s:], "old")
+        score = sum(1 for _, seg in items if len(seg) >= _SUBSTANTIVE)
+        if score > best_score:                     # ties → earliest start (keep more text)
+            best_start, best_score = s, score
+    return text[best_start:]
+
+
 def parse_doc(text, kind, titles=None, is_old=False):
     # Old repealed-Act gazette texts carry amendment FOOTNOTES interleaved through the body
     # ('N. Subs./Ins. by Act … (w.e.f. …)', 'The words … omitted'); their numbers continue the
@@ -286,13 +322,18 @@ def parse_doc(text, kind, titles=None, is_old=False):
     # The 2020 Codes/Rules are clean and stay byte-identical (they feed the embedding index); old
     # Acts are never embedded, so this needs no index rebuild.
     if is_old:
-        text = _FOOTNOTE_RE.sub("", _strip_preamble(text))
+        # Order matters: footnotes and the amending-list jump FIRST — _skip_front_matter picks
+        # the body start by trial-parsing, so it must score exactly the text that will be
+        # parsed (scoring pre-scrub picked starts whose best headings the scrub then deleted).
+        # It also runs before the schedule split below: the TOC lists 'THE FIRST SCHEDULE'
+        # too, and cutting at the TOC mention treated the whole body as schedule tail.
+        text = _skip_front_matter(_AMEND_MARK_RE.sub("", _FOOTNOTE_RE.sub("", _strip_preamble(text))))
     label = "Section" if kind == "code" else "Rule"
     sched_match = re.search(r"THE\s+[A-Z]+\s+SCHEDULE", text)
     body = text[: sched_match.start()] if sched_match else text
     tail = text[sched_match.start():] if sched_match else ""
     chunks = []
-    for lbl, seg in _split_numbered(body, kind):
+    for lbl, seg in _split_numbered(body, "old" if is_old else kind):
         seg = seg.strip()
         # The final rule has no closing heading, so it can swallow the trailing FORM
         # templates. Only when a segment is implausibly long, cut it at the first
@@ -1086,28 +1127,28 @@ def lookup_title(corpus_dict: dict, citation: str):
 _MAX_CHUNK_CHARS = 3000
 
 
-def _trim(text: str, query: str = "") -> str:
-    """Cap a chunk at _MAX_CHUNK_CHARS. A blind head-cut buries the answer when the
+def _trim(text: str, query: str = "", cap: int = _MAX_CHUNK_CHARS) -> str:
+    """Cap a chunk at `cap` chars. A blind head-cut buries the answer when the
     relevant passage sits deep in a long Section (definitions, §50, §13…), so when a
     query is given we keep the WINDOW around the best cluster of query terms instead."""
-    if len(text) <= _MAX_CHUNK_CHARS:
+    if len(text) <= cap:
         return text
     terms = [t for t in _terms(query) if len(t) >= 4] if query else []
     low = text.lower()
     hits = sorted({low.find(t) for t in terms if low.find(t) != -1})
-    if hits and hits[0] >= _MAX_CHUNK_CHARS:        # relevant text is past a plain head-cut
+    if hits and hits[0] >= cap:                     # relevant text is past a plain head-cut
         centre = hits[len(hits) // 2]
-        half = _MAX_CHUNK_CHARS // 2
+        half = cap // 2
         start = max(0, centre - half)
         start = max(0, text.rfind(". ", 0, start) + 1) or start
-        window = text[start:start + _MAX_CHUNK_CHARS]
+        window = text[start:start + cap]
         last_stop = window.rfind(". ")
-        if last_stop > _MAX_CHUNK_CHARS // 2:
+        if last_stop > cap // 2:
             window = window[:last_stop + 1]
         return "[…] " + window.strip() + " […]"
-    cut = text[:_MAX_CHUNK_CHARS]
+    cut = text[:cap]
     last_stop = max(cut.rfind(". "), cut.rfind(".\n"))
-    return (cut[:last_stop + 1] if last_stop > _MAX_CHUNK_CHARS // 2 else cut) + " [...]"
+    return (cut[:last_stop + 1] if last_stop > cap // 2 else cut) + " [...]"
 
 
 def _hdr(c: dict) -> str:
@@ -1116,10 +1157,16 @@ def _hdr(c: dict) -> str:
 
 
 def render_chunks(picks: list[dict], query: str = "") -> str:
-    # A focused definition chunk is already pinpointed — never window-trim it.
-    return "\n\n".join(
-        f"===== {_hdr(c)} =====\n{c['text'] if c.get('_definition') else _trim(c['text'], query)}"
-        for c in picks)
+    # A focused definition chunk is already pinpointed — never window-trim it. A _pin chunk is
+    # a comparison topic's CORE provision, so it gets DOUBLE the normal cap — the standard cap
+    # dropped the very clause being compared (the Maternity Benefit Act's twenty-six-weeks
+    # clause sat past §5's first sentence-aligned cut) — while still bounding the prompt.
+    def body(c):
+        if c.get("_definition"):
+            return c["text"]
+        return _trim(c["text"], query, cap=2 * _MAX_CHUNK_CHARS if c.get("_pin")
+                     else _MAX_CHUNK_CHARS)
+    return "\n\n".join(f"===== {_hdr(c)} =====\n{body(c)}" for c in picks)
 
 
 def render_all_results(all_results: dict, query: str = "") -> str:

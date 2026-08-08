@@ -5,15 +5,21 @@ Auth    : AWS_BEARER_TOKEN_BEDROCK + AWS_REGION in Streamlit secrets
 Design  : Legal editorial — deep navy, parchment, gold accent
 """
 
+import hashlib
+import hmac
 import json
 import os
 import re
 import html
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import boto3
 import streamlit as st
 
 import corpus
 import intake
+import usage
 
 # Mistral Large 3 — strongest model invokable on this account (Claude is blocked by an AWS
 # Marketplace payment issue; Nova Pro flips borderline numeric verdicts). Gives more complete,
@@ -933,6 +939,76 @@ blockquote.lc-auth-quote.unverified {
   border-left-color: var(--red) !important; background: var(--red-bg) !important;
 }
 
+/* ══ SIGN-IN + ACCOUNT ROW ══════════════════════════════════════════════════ */
+[class*="st-key-login_card"] {
+  background: linear-gradient(135deg, var(--white) 0%, var(--parchment) 130%);
+  border: 1px solid var(--indigo-border);
+  border-left: 3px solid var(--indigo-2);
+  border-radius: 14px;
+  padding: 20px 22px 18px;
+  margin-top: 1rem;
+  max-width: 430px;
+  box-shadow: var(--s2);
+  animation: fadeUp .35s var(--ease) both;
+}
+[class*="st-key-login_card"] [data-testid="stWidgetLabel"] p {
+  font-size: 10px !important; font-weight: 800 !important;
+  letter-spacing: .14em !important; text-transform: uppercase !important;
+  color: var(--slate-2) !important;
+}
+[class*="st-key-login_card"] input {
+  font-family: 'DM Sans', sans-serif !important;
+  font-size: 14px !important;
+  color: var(--ink) !important;
+}
+[class*="st-key-login_card"] [data-baseweb="input"] {
+  border: 1px solid var(--slate-4) !important;
+  border-radius: 10px !important;
+  background: var(--white) !important;
+}
+[class*="st-key-login_card"] [data-baseweb="input"]:focus-within {
+  border-color: var(--indigo) !important;
+  box-shadow: 0 0 0 3px rgba(79,91,213,.12) !important;
+}
+.lc-auth-fail {
+  font-size: 12.5px; font-weight: 600; color: var(--red);
+  background: var(--red-bg); border: 1px solid var(--red-b);
+  border-left-width: 3px; border-radius: 8px;
+  padding: 8px 12px; margin-top: 10px;
+  animation: fadeIn .25s ease both;
+}
+.lc-account {
+  display: inline-flex; align-items: center; gap: 9px;
+  font-size: 13px; color: var(--slate);
+  padding: 7px 2px 0;
+}
+.lc-account strong { color: var(--navy); font-weight: 600; }
+.lc-account-n {
+  font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--indigo-3); background: var(--indigo-bg);
+  border: 1px solid var(--indigo-border);
+  padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+}
+[class*="st-key-logout_wrap"] button {
+  background: transparent !important;
+  border: 1px solid var(--slate-4) !important;
+  border-left: 1px solid var(--slate-4) !important;
+  border-radius: 999px !important;
+  color: var(--slate-2) !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  padding: 6px 16px !important;
+  width: auto !important;
+  box-shadow: none !important;
+  text-align: center !important;
+}
+[class*="st-key-logout_wrap"] button:hover {
+  border-color: var(--red) !important;
+  color: var(--red) !important;
+  background: var(--red-bg) !important;
+  transform: none !important;
+}
+
 /* ══ CHAT MESSAGES ══════════════════════════════════════════════════════════ */
 [data-testid="stChatMessage"] {
   background: transparent !important;
@@ -1212,6 +1288,100 @@ def _model_label() -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Sign-in + usage tracking
+# ─────────────────────────────────────────────────────────────────────────────
+# Accounts live in Streamlit secrets — add a [users] table (username = password) and,
+# optionally, an `admins` list of usernames who can open the usage panel:
+#
+#   admins = ["rohit"]
+#   [users]
+#   rohit  = "some-password"                 # plaintext, or…
+#   priya  = "d74ff0ee8da3b98065b02..."      # …a sha256 hex digest of the password
+#
+# With no [users] table the app runs open (no sign-in) — so a fresh clone still works.
+try:                                          # secrets file may not exist at all (bare mode)
+    if st.secrets.get("USAGE_DB"):
+        os.environ["USAGE_DB"] = str(st.secrets["USAGE_DB"])
+except Exception:
+    pass
+
+
+def _auth_users() -> dict:
+    """The [users] table, keeping only string-valued entries. An email key someone forgot
+    to quote ('a@b.com = "pw"' instead of '"a@b.com" = "pw"') parses as a NESTED TOML
+    table, not a string — skip those so one bad line can't lock every user out."""
+    try:
+        return {str(k): v for k, v in dict(st.secrets.get("users", {})).items()
+                if isinstance(v, str)}
+    except Exception:
+        return {}
+
+
+def _resolve_user(identifier: str, users: dict):
+    """Map what the visitor typed to the canonical [users] key, or None. Whitespace is
+    trimmed and matching is case-insensitive (emails ARE case-insensitive, and visitors
+    type 'Priya@Gmail.com'); the canonical key is returned so usage counts aggregate
+    under one spelling."""
+    ident = str(identifier or "").strip()
+    if not ident:
+        return None
+    if ident in users:
+        return ident
+    low = ident.lower()
+    return next((k for k in users if k.lower() == low), None)
+
+
+def _admins() -> list:
+    try:
+        return [str(a) for a in st.secrets.get("admins", [])]
+    except Exception:
+        return []
+
+
+def _password_ok(stored, given) -> bool:
+    """Constant-time check. A 64-hex stored value is treated as sha256(password);
+    anything else is compared as plaintext (secrets are already private)."""
+    stored, given = str(stored or ""), str(given or "")
+    if not stored:
+        return False
+    if re.fullmatch(r"[0-9a-fA-F]{64}", stored):
+        return hmac.compare_digest(stored.lower(),
+                                   hashlib.sha256(given.encode()).hexdigest())
+    return hmac.compare_digest(stored, given)
+
+
+def _current_user() -> str:
+    return st.session_state.get("auth_user") or "anonymous"
+
+
+_IST = ZoneInfo("Asia/Kolkata")
+
+
+def _fmt_ts(ts) -> str:
+    if not ts:
+        return "—"
+    return datetime.fromtimestamp(float(ts), _IST).strftime("%d %b %Y, %H:%M")
+
+
+def _usage_csvs() -> tuple[str, str]:
+    """(summary_csv, activity_csv) for the admin download buttons: the per-user rollup
+    and the complete event log, Excel-friendly."""
+    import csv
+    import io
+    s = io.StringIO()
+    w = csv.writer(s)
+    w.writerow(["user", "questions", "logins", "last_activity"])
+    for r in usage.stats():
+        w.writerow([r["user"], r["questions"], r["logins"], _fmt_ts(r["last_seen"])])
+    a = io.StringIO()
+    w = csv.writer(a)
+    w.writerow(["when", "user", "event", "question"])
+    for e in usage.all_events():
+        w.writerow([_fmt_ts(e["ts"]), e["user"], e["event"], e["detail"]])
+    return s.getvalue(), a.getvalue()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # System prompt
 # ─────────────────────────────────────────────────────────────────────────────
 SYSTEM = """You are an expert Indian Labour Law compliance assistant for HR managers. You think like
@@ -1399,11 +1569,20 @@ Respond with a SINGLE JSON object and NOTHING else — no prose, no markdown, no
 
 RULES:
 - Give the 2-4 changes that matter most to HR. Be concrete: days, amounts, thresholds, percentages.
+  EXCEPTION — when the supplied grounding is organised into "### TOPIC:" blocks (a broad
+  "what changed overall" question), give ONE change per topic whose old and new texts actually
+  differ, in the order the topics appear; more than 4 changes is expected there.
 - LEAD with the change to the topic's CORE substantive rule (eligibility, amount/rate, threshold,
   notice/compensation) — comparing it against the matching previous-law provision when that text is
   supplied — BEFORE any peripheral or administrative change (insurance, nomination, registration).
 - "old"/"old_cite" come ONLY from the PREVIOUS-law text; "new"/"new_cite" ONLY from the
   CURRENT-law text. Never swap them.
+- The PREVIOUS-law text supplied is the repealed Act AS IT STOOD IMMEDIATELY BEFORE the Codes
+  replaced it — later amendments are already incorporated into it. Take every "old" figure from
+  that text as printed. NEVER reconstruct an earlier version of the Act from amendment history
+  or from memory (e.g. if the supplied Maternity Benefit Act text says twenty-six weeks, the
+  old position IS twenty-six weeks — a change made by an earlier amendment is NOT a change made
+  by the Codes, and reporting it as one overstates what changed).
 - Base every "old" on the supplied PREVIOUS-LAW text. If that text does not cover a point, do NOT
   assert the requirement is new or that "no equivalent existed" — the predecessor may simply not be
   among the supplied excerpts (e.g. provident fund, ESI and gratuity all existed under earlier Acts).
@@ -1633,12 +1812,48 @@ def analyze_query(raw_q: str) -> str:
 
 
 _COMPARE_RE = re.compile(
-    r"\b(what changed|has changed|changed (?:from|since|in)|old act|old law|earlier law|"
-    r"previously|before the code|used to|compared to|comparison|difference|differ|"
-    r"new vs old|old vs new|replaced|repeal)\b", re.I)
+    r"\b(what (?:has |have )?chang(?:ed|es)|has chang(?:ed|es)|chang(?:ed|es) (?:from|since|in)|"
+    r"old acts?|old laws?|earlier laws?|previously|before the codes?|used to|compared to|"
+    r"comparison|difference|differ|new vs old|old vs new|replaced|repeal)\b", re.I)
 
 def _is_comparison(query: str) -> bool:
     return bool(_COMPARE_RE.search(query))
+
+
+# Words that carry NO topic in a comparison question — the question's own meta-language
+# ("what changed", "old laws", "new codes") plus generic filler. A comparison query whose
+# every token is in this set has nothing for retrieval to bite on: grounding it on the raw
+# query surfaces a grab-bag of unrelated Sections, and the model — correctly forbidden from
+# manufacturing differences — returns an empty comparison. Those queries take the curated
+# overview path instead (build_overview_comparison_prompt).
+_CMP_META_WORDS = frozenset("""
+a an the and or of in on for to from with under at by so that this these those there
+what which how why when where is are was were be been being s do does did done has have had
+can could will would should shall may might must
+i we me us my our you your they them it its he she his her
+change changes changed changing new old newer older earlier previous previously prior latest
+current recent now today recently
+law laws act acts code codes rule rules regulation regulations provision provisions
+amendment amendments reform reforms regime system framework
+labour labor india indian government central
+compare compared comparing comparison contrast difference differences differ different
+between versus vs against
+tell explain give show list summarise summarize summary overview brief detail details
+know understand happened please about regarding exactly really actually
+major key main big biggest important significant notable everything anything all any some
+employee employees worker workers workman workmen staff people
+employer employers company companies establishment establishments business firm hr manager managers
+repeal repealed replace replaced replacing subsumed since before after
+one ones four 4 2019 2020 year years
+""".split())
+
+
+def _is_generic_comparison(query: str) -> bool:
+    """True for a comparison question with no substantive topic ("what changed from the old
+    laws?") — every token is comparison meta-language or filler. Topical comparison questions
+    ("how has gratuity changed…") keep the normal retrieval-grounded path."""
+    toks = re.findall(r"[a-z0-9]+", query.lower())
+    return bool(toks) and all(t in _CMP_META_WORDS for t in toks)
 
 
 def _verify_quotes(data: dict) -> dict:
@@ -1983,19 +2198,140 @@ def build_prompt(query: str, all_results: dict, applicability=None) -> str:
     parts.append(f"=== QUESTION ===\n{query}")
     return "\n\n".join(parts)
 
+# Query → overview-topic pins for TOPICAL comparisons. The lexically-ranked search_old top-k
+# can drop the topic's CORE provision (the Maternity Benefit Act's §5 fell to rank 7 and the
+# model was left comparing against notice/records sections), so when the query names one of
+# the curated topics, its flagship old/new provisions are pinned into the grounding.
+_CMP_TOPIC_PINS = [
+    (re.compile(r"retrench|lay[\s-]?off|clos(?:e|ing|ure)|shut", re.I), 0),
+    (re.compile(r"strike|lock[\s-]?out", re.I), 1),
+    (re.compile(r"minimum wage|floor wage|\bwages?\b|salary", re.I), 2),
+    (re.compile(r"\bbonus", re.I), 3),
+    (re.compile(r"gratuity", re.I), 4),
+    (re.compile(r"maternity|pregnan|childbirth", re.I), 5),
+    (re.compile(r"working hours|overtime|\bleave\b|holiday", re.I), 6),
+]
+
+
+def _pinned_cmp_chunks(query: str) -> tuple[list, list]:
+    """(new_chunks, old_chunks) pinned for the overview topics the query names. Marked _pin so
+    they render UNTRIMMED — the core clause being compared must never fall to the trim cap."""
+    pin_new, pin_old = [], []
+    for pat, ti in _CMP_TOPIC_PINS:
+        if not pat.search(query):
+            continue
+        label, cid, new_lbls, old_map = _OVERVIEW_TOPICS[ti]
+        entry = LOADED.get(cid)
+        if not entry:
+            continue
+        pin_new += [{**c, "_pin": True} for c in _pick_chunks(entry["chunks"], new_lbls)]
+        for oa in entry.get("old_acts", []):
+            want = old_map.get(oa["meta"]["slug"])
+            if want:
+                pin_old += [{**c, "_pin": True} for c in _pick_chunks(oa["chunks"], want)]
+    return pin_new, pin_old
+
+
 def build_comparison_prompt(query: str, all_results: dict) -> str:
-    new_g = corpus.render_all_results(all_results, query)
-    olds = []
+    pin_new, pin_old = _pinned_cmp_chunks(query)
+    # Pins always win: the ranked copy of a pinned provision is dropped so the untrimmed pinned
+    # copy is the one the model reads (the ranked copy is trim-capped and can lose the clause).
+    pinned_keys = {(c["source"], c["label"]) for c in pin_new}
+    ranked = {cid: ({**r, "chunks": [c for c in r["chunks"]
+                                     if (c["source"], c["label"]) not in pinned_keys]}
+                    if r["found"] else r)
+              for cid, r in all_results.items()}
+    for r in ranked.values():
+        r["found"] = bool(r["chunks"])
+    new_g = corpus.render_all_results(ranked, query)
+    if pin_new:
+        new_g += "\n\n" + corpus.render_chunks(pin_new, query)
+    olds = list(pin_old)
+    seen_old = {(c["source"], c["label"]) for c in pin_old}
     for cid, r in all_results.items():
         if not r["found"]:
             continue
-        oc = corpus.search_old(LOADED[cid], query, k=6)
-        if oc:
-            olds.append(corpus.render_chunks(oc, query))
-    old_g = "\n\n".join(olds) if olds else "(No repealed-Act text found for this topic.)"
+        for c in corpus.search_old(LOADED[cid], query, k=6):
+            key = (c["source"], c["label"])
+            if key not in seen_old:
+                seen_old.add(key)
+                olds.append(c)
+    old_g = (corpus.render_chunks(olds, query) if olds
+             else "(No repealed-Act text found for this topic.)")
     return (f"=== CURRENT LAW (in force) ===\n{new_g}\n\n"
             f"=== PREVIOUS LAW (repealed Acts) ===\n{old_g}\n\n"
             f"=== QUESTION ===\n{query}")
+
+
+# The headline old→new changes, pinned to their flagship provisions so a broad "what changed?"
+# question is grounded on ALIGNED old/new pairs rather than whatever chunks happen to contain
+# the words "old"/"law"/"changed". Each entry: (topic label, code id, new-Code provision
+# labels, {old-Act slug: provision labels}). Every pinned label is verified by
+# tests/test_comparison.py, so a corpus change can't silently empty a topic.
+_OVERVIEW_TOPICS = [
+    ("Retrenchment & closure — Government-permission threshold, notice and compensation", "ir",
+     ["Section 70", "Section 77"],
+     {"industrial_disputes": ["Section 25F", "Section 25K", "Section 25N"]}),
+    ("Strikes & lock-outs — notice requirements", "ir",
+     ["Section 62"],
+     {"industrial_disputes": ["Section 22", "Section 23"]}),
+    ("Minimum wages & the new floor wage", "wages",
+     ["Section 5", "Section 6", "Section 9"],
+     {"minimum_wages": ["Section 3", "Section 5"]}),
+    ("Annual bonus — eligibility and minimum", "wages",
+     ["Section 26"],
+     {"payment_of_bonus": ["Section 8", "Section 10"]}),
+    ("Gratuity", "ss",
+     ["Section 53"],
+     {"payment_of_gratuity": ["Section 4"]}),
+    ("Maternity benefit", "ss",
+     ["Section 60"],
+     {"maternity_benefit": ["Section 5"]}),
+    ("Working hours, overtime & annual leave", "osh",
+     ["Section 25", "Section 27", "Section 32"],
+     {"factories": ["Section 54", "Section 59", "Section 79"]}),
+]
+
+
+def _pick_chunks(chunks: list, labels: list) -> list:
+    by = {c["label"]: c for c in chunks}
+    return [by[l] for l in labels if l in by]
+
+
+def build_overview_comparison_prompt(query: str) -> tuple[str, list[str]]:
+    """Grounding for a BROAD comparison question ("what changed from the old laws?"), organised
+    as per-topic old/new pairs from _OVERVIEW_TOPICS. Returns (prompt, source shorts)."""
+    parts, shorts = [], []
+    for label, cid, new_lbls, old_map in _OVERVIEW_TOPICS:
+        entry = LOADED.get(cid)
+        if not entry:
+            continue
+        new_c = [{**c, "_pin": True} for c in _pick_chunks(entry["chunks"], new_lbls)]
+        old_c = []
+        for oa in entry.get("old_acts", []):
+            want = old_map.get(oa["meta"]["slug"])
+            if want:
+                old_c += [{**c, "_pin": True} for c in _pick_chunks(oa["chunks"], want)]
+        # Fail-soft if a pinned provision vanishes from the corpus: fall back to topical search
+        # so the block degrades to "best effort" instead of disappearing.
+        if not new_c:
+            new_c = corpus.search(entry, label, k=2)
+        if not old_c:
+            old_c = corpus.search_old(entry, label, k=2)
+        if not new_c or not old_c:
+            continue                      # an overview topic is only useful with BOTH sides
+        short = entry["meta"]["short"]
+        if short not in shorts:
+            shorts.append(short)
+        parts.append(f"### TOPIC: {label}\n"
+                     f"--- CURRENT LAW (in force) ---\n{corpus.render_chunks(new_c, label)}\n"
+                     f"--- PREVIOUS LAW (repealed Act) ---\n{corpus.render_chunks(old_c, label)}")
+    head = ("The manager asked a BROAD question about what changed overall under the new Labour "
+            "Codes. The grounding below is organised by TOPIC; each topic pairs the CURRENT "
+            "Code text with the matching PREVIOUS (repealed-Act) text. Give one \"changes\" "
+            "entry per topic whose texts actually differ, in the order the topics appear; skip "
+            "a topic only if its two texts say the same thing.")
+    return (head + "\n\n" + "\n\n".join(parts) + f"\n\n=== QUESTION ===\n{query}", shorts)
 
 def _correction_html(corrections):
     # `o` is the raw user token (from q.split()) — escape both sides before they enter this
@@ -2162,11 +2498,34 @@ def _render_analysis(analysis: list):
 def render_answer(data: dict):
     """Render a structured answer as scannable cards (verdict / points / actions /
     collapsible authorities). Falls back to markdown for unstructured replies."""
-    if isinstance(data, dict) and data.get("type") == "comparison" and "_raw" not in data:
+    if isinstance(data, dict) and "_raw" not in data and (
+            data.get("type") == "comparison"
+            or (isinstance(data.get("changes"), list) and data.get("changes"))):
+        # Also route comparison-shaped answers whose "type" key the model dropped —
+        # they'd otherwise fall through every info/compliance section and render blank.
         render_comparison(data)
         return
     if not isinstance(data, dict) or "_raw" in data:
         st.markdown(data.get("_raw", "") if isinstance(data, dict) else str(data))
+        st.markdown(f'<div class="lc-disclaimer">{DISCLAIMER}</div>', unsafe_allow_html=True)
+        return
+
+    # Safety net: valid JSON matching NEITHER answer schema (no known text, list, or verdict
+    # key) must never render as an empty card — show whatever prose the model returned.
+    _text_keys = ("direct_answer", "restatement", "answer", "headline")
+    _list_keys = ("analysis", "key_points", "requirements", "actions", "authorities")
+    _verd = data.get("verdict")
+    if (not any(str(data.get(k) or "").strip() for k in _text_keys)
+            and not any(isinstance(data.get(k), list) and data.get(k) for k in _list_keys)
+            and not (isinstance(_verd, dict)
+                     and str(_verd.get("summary") or _verd.get("status") or "").strip())):
+        prose = [str(v).strip() for v in data.values()
+                 if isinstance(v, str) and str(v).strip()]
+        if prose:
+            st.markdown("\n\n".join(_esc(p) for p in prose))
+        else:
+            st.markdown("⚠️ The answer came back in an unexpected format — please try "
+                        "rephrasing the question.")
         st.markdown(f'<div class="lc-disclaimer">{DISCLAIMER}</div>', unsafe_allow_html=True)
         return
 
@@ -2268,9 +2627,37 @@ for key, default in [
     ("intake", None),          # active clarifying-questions card, or None
     ("skip_intake", False),    # the next pending query has already been through intake
     ("intake_got", None),      # facts gathered, for applicability after the answer
+    ("auth_user", None),       # signed-in username, or None
+    ("auth_error", ""),        # last sign-in failure message, shown on the login card
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
+
+
+def _do_login():
+    typed = str(st.session_state.get("login_user", "")).strip()
+    p = st.session_state.get("login_pass", "")
+    users = _auth_users()
+    u = _resolve_user(typed, users)
+    if u is not None and _password_ok(users[u], p):
+        st.session_state.auth_user = u            # canonical key, not what was typed
+        st.session_state.auth_error = ""
+        st.session_state.login_pass = ""          # never keep the password in state
+        usage.log(u, "login")
+    else:
+        st.session_state.auth_error = "Wrong username/email or password — try again."
+        usage.log(typed or "(blank)", "login_failed")
+
+
+def _do_logout():
+    u = st.session_state.get("auth_user")
+    if u:
+        usage.log(u, "logout")
+    # Drop the account AND the conversation — the next person at this browser
+    # must not see the previous user's questions.
+    for k in ("auth_user", "messages", "pending", "intake", "skip_intake",
+              "force_compare", "intake_got"):
+        st.session_state.pop(k, None)
 
 def _submit(q: str):
     st.session_state.pending = q
@@ -2407,6 +2794,69 @@ else:
   </div>
 </div>
 """, unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sign-in gate — active only when a [users] table exists in secrets
+# ─────────────────────────────────────────────────────────────────────────────
+if _auth_users() and not st.session_state.auth_user:
+    with st.container(key="login_card"):
+        st.markdown(
+            '<div class="lc-intake-label">Sign in</div>'
+            '<div class="lc-intake-head">Enter the username or email and password you were '
+            'given to use the assistant.</div>',
+            unsafe_allow_html=True)
+        st.text_input("Username or email", key="login_user", autocomplete="username")
+        st.text_input("Password", key="login_pass", type="password",
+                      autocomplete="current-password")
+        st.button("Sign in", type="primary", key="login_go", on_click=_do_login)
+        if st.session_state.auth_error:
+            st.markdown(f'<div class="lc-auth-fail">⚠ {_esc(st.session_state.auth_error)}</div>',
+                        unsafe_allow_html=True)
+    st.stop()
+
+# Account row — who is signed in, how many questions they've asked, sign-out,
+# and (for admins) the usage panel.
+if st.session_state.auth_user:
+    _user = st.session_state.auth_user
+    _c1, _c2 = st.columns([4.2, 1])
+    _n_q = usage.question_count(_user)
+    _c1.markdown(
+        f'<div class="lc-account">👤 <strong>{_esc(_user)}</strong>'
+        f'<span class="lc-account-n">{_n_q} question{"s" if _n_q != 1 else ""} asked</span></div>',
+        unsafe_allow_html=True)
+    with _c2:
+        with st.container(key="logout_wrap"):
+            st.button("Sign out", key="logout_btn", on_click=_do_logout)
+    if _user in _admins():
+        with st.expander("📊 Usage & activity (admin)", expanded=False):
+            import pandas as _pd
+            _rows = usage.stats()
+            if _rows:
+                st.markdown('<div class="lc-section-label">Per user</div>',
+                            unsafe_allow_html=True)
+                st.dataframe(_pd.DataFrame([{
+                    "User": r["user"], "Questions": r["questions"], "Logins": r["logins"],
+                    "Last activity": _fmt_ts(r["last_seen"]),
+                } for r in _rows]), hide_index=True, use_container_width=True)
+                _ev = usage.recent(50)
+                st.markdown('<div class="lc-section-label">Recent activity</div>',
+                            unsafe_allow_html=True)
+                st.dataframe(_pd.DataFrame([{
+                    "When": _fmt_ts(e["ts"]), "User": e["user"], "Event": e["event"],
+                    "Question": (e["detail"][:80] + "…") if len(e["detail"]) > 80 else e["detail"],
+                } for e in _ev]), hide_index=True, use_container_width=True)
+                _sum_csv, _act_csv = _usage_csvs()
+                _today = datetime.now(_IST).strftime("%Y%m%d")
+                _d1, _d2, _ = st.columns([1.4, 1.4, 1.6])
+                _d1.download_button("⬇ Summary report (CSV)", _sum_csv,
+                                    file_name=f"usage-summary-{_today}.csv",
+                                    mime="text/csv", key="dl_summary")
+                _d2.download_button("⬇ Full activity (CSV)", _act_csv,
+                                    file_name=f"usage-activity-{_today}.csv",
+                                    mime="text/csv", key="dl_activity")
+            else:
+                st.markdown("No activity recorded yet.")
+
 
 # ── Chat input — Streamlit always renders this in a sticky bottom dock ─────
 if prompt := st.chat_input(
@@ -2692,6 +3142,7 @@ if st.session_state.pending:
     st.session_state.pending = None
 
     corrected_q, corrections = corpus.correct_query(raw_q)
+    usage.log(_current_user(), "question", raw_q)
 
     # Show user message
     st.session_state.messages.append({"role": "user", "content": raw_q})
@@ -2746,7 +3197,18 @@ if st.session_state.pending:
                         "ir": {**_ir,
                                "chunks": [c for c in _ir["chunks"] if c.get("num") not in _excl]}}
             user_msg   = build_prompt(raw_q, _rfp, applicability=_notes)
-            is_compare = bool(sources) and (force_compare or _is_comparison(corrected_q))
+            wants_cmp   = force_compare or _is_comparison(corrected_q)
+            generic_cmp = wants_cmp and _is_generic_comparison(corrected_q)
+            is_compare  = generic_cmp or (bool(sources) and wants_cmp)
+
+            cmp_prompt = None
+            if generic_cmp:
+                # A broad "what changed from the old laws?" has no topical keywords, so raw
+                # retrieval surfaces unrelated Sections on both sides and the model — rightly
+                # forbidden from manufacturing differences — used to come back empty. Ground it
+                # on the curated per-topic old/new pairs instead.
+                cmp_prompt, sources = build_overview_comparison_prompt(corrected_q)
+                no_provision = []
 
             if not sources:
                 names = " · ".join(e["meta"]["short"] for e in LOADED.values())
@@ -2759,16 +3221,23 @@ if st.session_state.pending:
                 _top = [f"{c['label']} — {(c.get('title') or '').strip()} ({r['meta']['short']})"
                         if (c.get('title') or '').strip() else f"{c['label']} ({r['meta']['short']})"
                         for r in all_results.values() if r["found"] for c in r["chunks"][:1]]
-                if _top:
+                if _top and not generic_cmp:
                     _stat.update(label=f"Reading {_top[0]}"
                                  + (f" and {len(_top) - 1} more provisions…"
                                     if len(_top) > 1 else "…"))
                 if is_compare:
-                    _stat.update(label="Comparing the old Act with the new Code…")
+                    _stat.update(label="Comparing the old Acts with the new Codes…"
+                                 if generic_cmp else
+                                 "Comparing the old Act with the new Code…")
                     data = generate_comparison(
-                        build_comparison_prompt(corrected_q, all_results),
+                        cmp_prompt if generic_cmp
+                        else build_comparison_prompt(corrected_q, all_results),
                         on_progress=lambda w: _stat.update(
                             label=f"Comparing old and new law… {w:,} words drafted"))
+                    if isinstance(data, dict) and "_raw" not in data:
+                        # The renderer routes on this key; a model that drops it must not
+                        # blank the answer.
+                        data["type"] = "comparison"
                 else:
                     _stat.update(label="Drafting your answer…")
                     data = generate_answer(

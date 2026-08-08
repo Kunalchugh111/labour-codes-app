@@ -57,6 +57,36 @@ subscription and no use-case form**. Just:
 Update later (e.g. add the "old Acts → what changed" feature, or new rules): push to the
 repo and Streamlit redeploys automatically.
 
+## Sign-in & usage tracking (optional)
+Add a `[users]` table to the same **Secrets** to require sign-in — including for people
+outside the company: create a login (a plain username **or their email address**), tell
+them the password, and they sign in on the app's gate screen. Every login, logout, failed
+sign-in and question is recorded, and admins get a **📊 Usage & activity** panel (per-user
+question counts, login history, recent questions) with **CSV report downloads**:
+
+```
+admins = ["rohit"]                        # usernames who can open the usage panel
+
+[users]
+rohit = "some-password"                   # plaintext…
+priya = "d74ff0ee8da3b98065b0..."         # …or a sha256 hex digest of the password
+                                          #   python3 -c "import hashlib;print(hashlib.sha256(b'pw').hexdigest())"
+"vendor@theircompany.com" = "invite-pw"   # email logins MUST be quoted (the @ and dots)
+```
+
+- **Email keys must be in quotes** — an unquoted `a@b.com = "pw"` is invalid TOML-table
+  syntax and that entry is ignored. Sign-in matches usernames/emails case-insensitively
+  and ignores stray spaces.
+- **No `[users]` table → no sign-in** — the app runs open, questions are logged as `anonymous`.
+- Signed-in users see their own name + question count in the header, with a **Sign out** button.
+- Admins can download **`usage-summary-<date>.csv`** (per-user totals) and
+  **`usage-activity-<date>.csv`** (every event with question text) from the panel — both
+  open directly in Excel.
+- The log is a local SQLite file (`usage.db`, gitignored). On Streamlit Community Cloud the
+  filesystem is **ephemeral**: history survives reruns/restarts but a **redeploy resets it** —
+  download the CSVs before redeploying, or point the optional `USAGE_DB` secret at a
+  persistent path.
+
 ## Run locally (optional)
 ```
 pip install -r requirements.txt
