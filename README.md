@@ -57,6 +57,26 @@ subscription and no use-case form**. Just:
 Update later (e.g. add the "old Acts → what changed" feature, or new rules): push to the
 repo and Streamlit redeploys automatically.
 
+## Sign-in & usage tracking (optional)
+Add a `[users]` table to the same **Secrets** to require sign-in. Every login, logout,
+failed sign-in and question is then recorded, and admins get a **📊 Usage & activity**
+panel (per-user question counts, login history, recent questions) at the top of the app:
+
+```
+admins = ["rohit"]                # usernames who can open the usage panel
+
+[users]
+rohit = "some-password"           # plaintext…
+priya = "d74ff0ee8da3b98065b0..." # …or a sha256 hex digest of the password
+                                  #   python3 -c "import hashlib;print(hashlib.sha256(b'pw').hexdigest())"
+```
+
+- **No `[users]` table → no sign-in** — the app runs open, questions are logged as `anonymous`.
+- Signed-in users see their own name + question count in the header, with a **Sign out** button.
+- The log is a local SQLite file (`usage.db`, gitignored). On Streamlit Community Cloud the
+  filesystem is **ephemeral**: history survives reruns/restarts but a **redeploy resets it**.
+  Point the optional `USAGE_DB` secret at a persistent path if long-term history matters.
+
 ## Run locally (optional)
 ```
 pip install -r requirements.txt

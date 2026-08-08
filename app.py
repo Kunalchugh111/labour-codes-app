@@ -5,15 +5,21 @@ Auth    : AWS_BEARER_TOKEN_BEDROCK + AWS_REGION in Streamlit secrets
 Design  : Legal editorial — deep navy, parchment, gold accent
 """
 
+import hashlib
+import hmac
 import json
 import os
 import re
 import html
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import boto3
 import streamlit as st
 
 import corpus
 import intake
+import usage
 
 # Mistral Large 3 — strongest model invokable on this account (Claude is blocked by an AWS
 # Marketplace payment issue; Nova Pro flips borderline numeric verdicts). Gives more complete,
@@ -933,6 +939,76 @@ blockquote.lc-auth-quote.unverified {
   border-left-color: var(--red) !important; background: var(--red-bg) !important;
 }
 
+/* ══ SIGN-IN + ACCOUNT ROW ══════════════════════════════════════════════════ */
+[class*="st-key-login_card"] {
+  background: linear-gradient(135deg, var(--white) 0%, var(--parchment) 130%);
+  border: 1px solid var(--indigo-border);
+  border-left: 3px solid var(--indigo-2);
+  border-radius: 14px;
+  padding: 20px 22px 18px;
+  margin-top: 1rem;
+  max-width: 430px;
+  box-shadow: var(--s2);
+  animation: fadeUp .35s var(--ease) both;
+}
+[class*="st-key-login_card"] [data-testid="stWidgetLabel"] p {
+  font-size: 10px !important; font-weight: 800 !important;
+  letter-spacing: .14em !important; text-transform: uppercase !important;
+  color: var(--slate-2) !important;
+}
+[class*="st-key-login_card"] input {
+  font-family: 'DM Sans', sans-serif !important;
+  font-size: 14px !important;
+  color: var(--ink) !important;
+}
+[class*="st-key-login_card"] [data-baseweb="input"] {
+  border: 1px solid var(--slate-4) !important;
+  border-radius: 10px !important;
+  background: var(--white) !important;
+}
+[class*="st-key-login_card"] [data-baseweb="input"]:focus-within {
+  border-color: var(--indigo) !important;
+  box-shadow: 0 0 0 3px rgba(79,91,213,.12) !important;
+}
+.lc-auth-fail {
+  font-size: 12.5px; font-weight: 600; color: var(--red);
+  background: var(--red-bg); border: 1px solid var(--red-b);
+  border-left-width: 3px; border-radius: 8px;
+  padding: 8px 12px; margin-top: 10px;
+  animation: fadeIn .25s ease both;
+}
+.lc-account {
+  display: inline-flex; align-items: center; gap: 9px;
+  font-size: 13px; color: var(--slate);
+  padding: 7px 2px 0;
+}
+.lc-account strong { color: var(--navy); font-weight: 600; }
+.lc-account-n {
+  font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--indigo-3); background: var(--indigo-bg);
+  border: 1px solid var(--indigo-border);
+  padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+}
+[class*="st-key-logout_wrap"] button {
+  background: transparent !important;
+  border: 1px solid var(--slate-4) !important;
+  border-left: 1px solid var(--slate-4) !important;
+  border-radius: 999px !important;
+  color: var(--slate-2) !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  padding: 6px 16px !important;
+  width: auto !important;
+  box-shadow: none !important;
+  text-align: center !important;
+}
+[class*="st-key-logout_wrap"] button:hover {
+  border-color: var(--red) !important;
+  color: var(--red) !important;
+  background: var(--red-bg) !important;
+  transform: none !important;
+}
+
 /* ══ CHAT MESSAGES ══════════════════════════════════════════════════════════ */
 [data-testid="stChatMessage"] {
   background: transparent !important;
@@ -1209,6 +1285,64 @@ def _model_label() -> str:
     if "llama" in mid:      return "Meta Llama"
     if "mistral" in mid:    return "Mistral"
     return _model_id()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sign-in + usage tracking
+# ─────────────────────────────────────────────────────────────────────────────
+# Accounts live in Streamlit secrets — add a [users] table (username = password) and,
+# optionally, an `admins` list of usernames who can open the usage panel:
+#
+#   admins = ["rohit"]
+#   [users]
+#   rohit  = "some-password"                 # plaintext, or…
+#   priya  = "d74ff0ee8da3b98065b02..."      # …a sha256 hex digest of the password
+#
+# With no [users] table the app runs open (no sign-in) — so a fresh clone still works.
+try:                                          # secrets file may not exist at all (bare mode)
+    if st.secrets.get("USAGE_DB"):
+        os.environ["USAGE_DB"] = str(st.secrets["USAGE_DB"])
+except Exception:
+    pass
+
+
+def _auth_users() -> dict:
+    try:
+        return dict(st.secrets.get("users", {}))
+    except Exception:
+        return {}
+
+
+def _admins() -> list:
+    try:
+        return [str(a) for a in st.secrets.get("admins", [])]
+    except Exception:
+        return []
+
+
+def _password_ok(stored, given) -> bool:
+    """Constant-time check. A 64-hex stored value is treated as sha256(password);
+    anything else is compared as plaintext (secrets are already private)."""
+    stored, given = str(stored or ""), str(given or "")
+    if not stored:
+        return False
+    if re.fullmatch(r"[0-9a-fA-F]{64}", stored):
+        return hmac.compare_digest(stored.lower(),
+                                   hashlib.sha256(given.encode()).hexdigest())
+    return hmac.compare_digest(stored, given)
+
+
+def _current_user() -> str:
+    return st.session_state.get("auth_user") or "anonymous"
+
+
+_IST = ZoneInfo("Asia/Kolkata")
+
+
+def _fmt_ts(ts) -> str:
+    if not ts:
+        return "—"
+    return datetime.fromtimestamp(float(ts), _IST).strftime("%d %b %Y, %H:%M")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2457,9 +2591,36 @@ for key, default in [
     ("intake", None),          # active clarifying-questions card, or None
     ("skip_intake", False),    # the next pending query has already been through intake
     ("intake_got", None),      # facts gathered, for applicability after the answer
+    ("auth_user", None),       # signed-in username, or None
+    ("auth_error", ""),        # last sign-in failure message, shown on the login card
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
+
+
+def _do_login():
+    u = str(st.session_state.get("login_user", "")).strip()
+    p = st.session_state.get("login_pass", "")
+    users = _auth_users()
+    if u in users and _password_ok(users[u], p):
+        st.session_state.auth_user = u
+        st.session_state.auth_error = ""
+        st.session_state.login_pass = ""          # never keep the password in state
+        usage.log(u, "login")
+    else:
+        st.session_state.auth_error = "Wrong username or password — try again."
+        usage.log(u or "(blank)", "login_failed")
+
+
+def _do_logout():
+    u = st.session_state.get("auth_user")
+    if u:
+        usage.log(u, "logout")
+    # Drop the account AND the conversation — the next person at this browser
+    # must not see the previous user's questions.
+    for k in ("auth_user", "messages", "pending", "intake", "skip_intake",
+              "force_compare", "intake_got"):
+        st.session_state.pop(k, None)
 
 def _submit(q: str):
     st.session_state.pending = q
@@ -2596,6 +2757,59 @@ else:
   </div>
 </div>
 """, unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sign-in gate — active only when a [users] table exists in secrets
+# ─────────────────────────────────────────────────────────────────────────────
+if _auth_users() and not st.session_state.auth_user:
+    with st.container(key="login_card"):
+        st.markdown(
+            '<div class="lc-intake-label">Sign in</div>'
+            '<div class="lc-intake-head">Enter your credentials to use the assistant.</div>',
+            unsafe_allow_html=True)
+        st.text_input("Username", key="login_user", autocomplete="username")
+        st.text_input("Password", key="login_pass", type="password",
+                      autocomplete="current-password")
+        st.button("Sign in", type="primary", key="login_go", on_click=_do_login)
+        if st.session_state.auth_error:
+            st.markdown(f'<div class="lc-auth-fail">⚠ {_esc(st.session_state.auth_error)}</div>',
+                        unsafe_allow_html=True)
+    st.stop()
+
+# Account row — who is signed in, how many questions they've asked, sign-out,
+# and (for admins) the usage panel.
+if st.session_state.auth_user:
+    _user = st.session_state.auth_user
+    _c1, _c2 = st.columns([4.2, 1])
+    _n_q = usage.question_count(_user)
+    _c1.markdown(
+        f'<div class="lc-account">👤 <strong>{_esc(_user)}</strong>'
+        f'<span class="lc-account-n">{_n_q} question{"s" if _n_q != 1 else ""} asked</span></div>',
+        unsafe_allow_html=True)
+    with _c2:
+        with st.container(key="logout_wrap"):
+            st.button("Sign out", key="logout_btn", on_click=_do_logout)
+    if _user in _admins():
+        with st.expander("📊 Usage & activity (admin)", expanded=False):
+            import pandas as _pd
+            _rows = usage.stats()
+            if _rows:
+                st.markdown('<div class="lc-section-label">Per user</div>',
+                            unsafe_allow_html=True)
+                st.dataframe(_pd.DataFrame([{
+                    "User": r["user"], "Questions": r["questions"], "Logins": r["logins"],
+                    "Last activity": _fmt_ts(r["last_seen"]),
+                } for r in _rows]), hide_index=True, use_container_width=True)
+                _ev = usage.recent(50)
+                st.markdown('<div class="lc-section-label">Recent activity</div>',
+                            unsafe_allow_html=True)
+                st.dataframe(_pd.DataFrame([{
+                    "When": _fmt_ts(e["ts"]), "User": e["user"], "Event": e["event"],
+                    "Question": (e["detail"][:80] + "…") if len(e["detail"]) > 80 else e["detail"],
+                } for e in _ev]), hide_index=True, use_container_width=True)
+            else:
+                st.markdown("No activity recorded yet.")
+
 
 # ── Chat input — Streamlit always renders this in a sticky bottom dock ─────
 if prompt := st.chat_input(
@@ -2881,6 +3095,7 @@ if st.session_state.pending:
     st.session_state.pending = None
 
     corrected_q, corrections = corpus.correct_query(raw_q)
+    usage.log(_current_user(), "question", raw_q)
 
     # Show user message
     st.session_state.messages.append({"role": "user", "content": raw_q})
