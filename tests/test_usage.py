@@ -46,6 +46,46 @@ def test_password_sha256():
     assert not app._password_ok(h, h)
 
 
+def test_password_ironclad_paste_junk():
+    # numeric password stored WITHOUT quotes parses as a TOML int — must still work
+    assert app._password_ok(123456, "123456")
+    assert app._password_ok(123456, " 123456 ")
+    # trailing/leading whitespace on either side (chat/Word paste)
+    assert app._password_ok(" pw-1 ", "pw-1")
+    assert app._password_ok("pw-1", "  pw-1  ")
+    # non-breaking space and zero-width characters (WhatsApp/Word paste)
+    assert app._password_ok("pw-1 ", "pw-1")
+    assert app._password_ok("pw-1", "​pw-1﻿")
+    # phone-keyboard smart quotes vs straight quotes inside the password
+    assert app._password_ok("it's-pw", "it’s-pw")
+    assert app._password_ok("it’s-pw", "it's-pw")
+    # user pastes the whole TOML value including its quotes
+    assert app._password_ok("invite-pw-1", '"invite-pw-1"')
+    assert app._password_ok("invite-pw-1", "'invite-pw-1'")
+    # …but a wrong password wrapped in quotes still fails
+    assert not app._password_ok("invite-pw-1", '"wrong"')
+    # sha256 stored hash still matches a quote-wrapped correct password
+    h = hashlib.sha256(b"secret-pw").hexdigest()
+    assert app._password_ok(h, '"secret-pw"')
+
+
+def test_auth_users_keeps_scalars():
+    # mimic _auth_users' filter: scalars (incl. unquoted numeric passwords) kept,
+    # tables/lists (unquoted-email damage) dropped
+    raw = {"rohit": 123456, "ok": "pw", "flag": True,
+           "a": {"b@c": {"com": "pw"}}, "l": ["x"]}
+    filtered = {str(k): v for k, v in raw.items()
+                if isinstance(v, (str, int, float, bool))}
+    assert set(filtered) == {"rohit", "ok", "flag"}
+    assert app._password_ok(filtered["rohit"], "123456")
+
+
+def test_resolve_user_paste_junk():
+    users = {"rohit": "pw", "priya@gmail.com": "pw2"}
+    assert app._resolve_user("​rohit ", users) == "rohit"
+    assert app._resolve_user("PRIYA@GMAIL.COM﻿", users) == "priya@gmail.com"
+
+
 # ── login-identifier resolution (username OR email, forgivingly typed) ────────
 def test_resolve_user():
     users = {"rohit": "pw", "priya@gmail.com": "pw2"}

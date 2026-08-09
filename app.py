@@ -1366,28 +1366,47 @@ except Exception:
 
 
 def _auth_users() -> dict:
-    """The [users] table, keeping only string-valued entries. An email key someone forgot
-    to quote ('a@b.com = "pw"' instead of '"a@b.com" = "pw"') parses as a NESTED TOML
-    table, not a string — skip those so one bad line can't lock every user out."""
+    """The [users] table, keeping every SCALAR-valued entry. A numeric password typed
+    without quotes ('rohit = 123456') parses as a TOML integer — it must still work, so
+    scalars are kept (compared as text). Only tables/lists are dropped: that's what an
+    email key someone forgot to quote ('a@b.com = "pw"') parses into, and skipping it
+    means one bad line can't lock every user out."""
     try:
         return {str(k): v for k, v in dict(st.secrets.get("users", {})).items()
-                if isinstance(v, str)}
+                if isinstance(v, (str, int, float, bool))}
     except Exception:
         return {}
 
 
+# Paste-junk that sneaks into credentials: zero-width characters (chat apps, Word),
+# non-breaking spaces, and "smart" quotes substituted by phone keyboards.
+_ZERO_WIDTH_RE = re.compile("[\u200b\u200c\u200d\u2060\ufeff]")
+_SMART_QUOTES = {"‘": "'", "’": "'", "“": '"', "”": '"'}
+
+
+def _norm_cred(s) -> str:
+    """Normalise a credential for comparison: drop zero-width characters, turn NBSP into
+    a plain space, map smart quotes to straight ones, and trim edge whitespace. Kills the
+    invisible copy-paste differences that make a 'correct' password mysteriously fail."""
+    s = str(s if s is not None else "")
+    s = _ZERO_WIDTH_RE.sub("", s).replace("\u00a0", " ")
+    for smart, straight in _SMART_QUOTES.items():
+        s = s.replace(smart, straight)
+    return s.strip()
+
+
 def _resolve_user(identifier: str, users: dict):
-    """Map what the visitor typed to the canonical [users] key, or None. Whitespace is
-    trimmed and matching is case-insensitive (emails ARE case-insensitive, and visitors
-    type 'Priya@Gmail.com'); the canonical key is returned so usage counts aggregate
-    under one spelling."""
-    ident = str(identifier or "").strip()
+    """Map what the visitor typed to the canonical [users] key, or None. Paste-junk is
+    normalised, whitespace trimmed, and matching is case-insensitive (emails ARE
+    case-insensitive, and visitors type 'Priya@Gmail.com'); the canonical key is returned
+    so usage counts aggregate under one spelling."""
+    ident = _norm_cred(identifier)
     if not ident:
         return None
     if ident in users:
         return ident
     low = ident.lower()
-    return next((k for k in users if k.lower() == low), None)
+    return next((k for k in users if _norm_cred(k).lower() == low), None)
 
 
 def _admins() -> list:
@@ -1398,15 +1417,21 @@ def _admins() -> list:
 
 
 def _password_ok(stored, given) -> bool:
-    """Constant-time check. A 64-hex stored value is treated as sha256(password);
-    anything else is compared as plaintext (secrets are already private)."""
-    stored, given = str(stored or ""), str(given or "")
-    if not stored:
+    """Constant-time check, hardened against paste-junk on BOTH sides. A 64-hex stored
+    value is treated as sha256(password); anything else is compared as plaintext (secrets
+    are already private). The typed password is also retried with one pair of wrapping
+    quotes removed — people paste the value straight out of 'password = \"abc\"'."""
+    stored_n, given_n = _norm_cred(stored), _norm_cred(given)
+    if not stored_n:
         return False
-    if re.fullmatch(r"[0-9a-fA-F]{64}", stored):
-        return hmac.compare_digest(stored.lower(),
-                                   hashlib.sha256(given.encode()).hexdigest())
-    return hmac.compare_digest(stored, given)
+    candidates = [given_n]
+    if (len(given_n) >= 2 and given_n[0] == given_n[-1] and given_n[0] in "\"'"):
+        candidates.append(given_n[1:-1].strip())
+    if re.fullmatch(r"[0-9a-fA-F]{64}", stored_n):
+        return any(hmac.compare_digest(stored_n.lower(),
+                                       hashlib.sha256(g.encode()).hexdigest())
+                   for g in candidates)
+    return any(hmac.compare_digest(stored_n, g) for g in candidates)
 
 
 def _current_user() -> str:
@@ -2694,7 +2719,7 @@ for key, default in [
 
 
 def _do_login():
-    typed = str(st.session_state.get("login_user", "")).strip()
+    typed = _norm_cred(st.session_state.get("login_user", ""))
     p = st.session_state.get("login_pass", "")
     users = _auth_users()
     u = _resolve_user(typed, users)
@@ -2704,8 +2729,13 @@ def _do_login():
         st.session_state.login_pass = ""          # never keep the password in state
         usage.log(u, "login")
     else:
-        st.session_state.auth_error = "Wrong username/email or password — try again."
-        usage.log(typed or "(blank)", "login_failed")
+        # One combined message on screen (don't tell a stranger which half was wrong) —
+        # but log WHICH half failed so the admin can diagnose from the usage panel.
+        st.session_state.auth_error = (
+            "Wrong username/email or password — try again. Passwords are case-sensitive; "
+            "check Caps Lock and don't include quotes or spaces around it.")
+        usage.log(typed or "(blank)", "login_failed",
+                  "unknown user" if u is None else f"wrong password for '{u}'")
 
 
 def _do_logout():
