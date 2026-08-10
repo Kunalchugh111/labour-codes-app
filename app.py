@@ -1031,6 +1031,7 @@ blockquote.lc-auth-quote.unverified {
 }
 .lc-auth-fail {
   display: block;
+  overflow-wrap: anywhere;
   font-size: 13px; font-weight: 400; color: var(--red);
   background: var(--red-bg); border: 1px solid var(--red-b);
   border-left: 3px solid var(--red);
@@ -1047,7 +1048,7 @@ blockquote.lc-auth-quote.unverified {
   display: block; font-size: 11.5px; color: var(--amber);
   margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--red-b);
 }
-[class*="st-key-setup_card"] {
+.lc-setup-card {
   background: var(--white);
   border: 1px solid var(--indigo-border);
   border-left: 3px solid var(--indigo-2);
@@ -1057,10 +1058,19 @@ blockquote.lc-auth-quote.unverified {
   max-width: 560px;
   box-shadow: var(--s1);
   animation: fadeUp .35s var(--ease) both;
+  overflow-wrap: anywhere;               /* long masked emails wrap, never spill out */
 }
-[class*="st-key-setup_card"] p {
-  font-size: 13px !important; line-height: 1.6 !important;
-  color: var(--ink-2) !important; margin-bottom: .35rem !important;
+.lc-setup-row {
+  font-size: 13px; line-height: 1.6; color: var(--ink-2);
+  padding: 5px 0; border-bottom: 1px dashed var(--slate-5);
+}
+.lc-setup-row:last-of-type { border-bottom: none; }
+.lc-setup-row.warn { color: var(--amber); }
+.lc-setup-row strong { color: var(--navy); font-weight: 600; }
+.lc-setup-row code, .lc-setup-note code {
+  background: var(--parchment-2); color: var(--navy-2);
+  padding: 1px 6px; border-radius: 4px; font-size: 11.5px;
+  border: 1px solid var(--parchment-3);
 }
 .lc-setup-note {
   font-size: 11px; font-style: italic; color: var(--slate-3);
@@ -3010,15 +3020,21 @@ if _auth_users() and not st.session_state.auth_user:
             _raw_users = dict(st.secrets.get("users", {}))
         except Exception:
             _raw_users = {}
-        with st.container(key="setup_card"):
-            st.markdown('<div class="lc-intake-label">Setup check</div>',
-                        unsafe_allow_html=True)
-            for lvl, msg in _setup_rows(_top, _raw_users, _admins()):
-                icon = "✅" if lvl == "ok" else "⚠️"
-                st.markdown(f"{icon} {msg}")
-            st.markdown('<div class="lc-setup-note">Names are masked; passwords are never '
-                        'shown. Remove <code>?setup=1</code> from the address to hide this.</div>',
-                        unsafe_allow_html=True)
+        # One self-contained HTML block: Streamlit renders each st.markdown row at the full
+        # column width, so rows inside a max-width container spilled past the card's edge.
+        _rows_html = []
+        for lvl, msg in _setup_rows(_top, _raw_users, _admins()):
+            h = _esc(msg)
+            h = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", h)
+            h = re.sub(r"`([^`]+)`", r"<code>\1</code>", h)
+            _rows_html.append(f'<div class="lc-setup-row {lvl}">'
+                              f'{"✅" if lvl == "ok" else "⚠️"} {h}</div>')
+        st.markdown(
+            '<div class="lc-setup-card"><div class="lc-intake-label">Setup check</div>'
+            + "".join(_rows_html) +
+            '<div class="lc-setup-note">Names are masked; passwords are never shown. '
+            'Remove <code>?setup=1</code> from the address to hide this.</div></div>',
+            unsafe_allow_html=True)
     st.stop()
 
 # Account row — who is signed in, how many questions they've asked, sign-out,
