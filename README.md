@@ -58,6 +58,23 @@ Update later (e.g. add the "old Acts → what changed" feature, or new rules): p
 repo and Streamlit redeploys automatically.
 
 ## Sign-in & usage tracking (optional)
+
+### The simple way — access codes (recommended)
+Two lines in **Secrets**, nothing else:
+
+```
+APP_ACCESS_CODES = "rohit-731, priya-410, vendor-527"
+ADMIN_CODES = "rohit-731"
+```
+
+Give each person their one code (name the codes after people — the code is their identity
+in the usage report). They type just that code on the sign-in screen — no username, no
+password, not case-sensitive, spaces ignored. Anyone entering an `ADMIN_CODES` code also
+gets the **📊 Usage & activity** panel with the CSV report downloads. Add or revoke a
+person by editing the one line. When `APP_ACCESS_CODES` is set it replaces the `[users]`
+mode below entirely.
+
+### The username/password way — a `[users]` table
 Add a `[users]` table to the same **Secrets** to require sign-in — including for people
 outside the company: create a login (a plain username **or their email address**), tell
 them the password, and they sign in on the app's gate screen. Every login, logout, failed
@@ -86,6 +103,9 @@ priya = "d74ff0ee8da3b98065b0..."         # …or a sha256 hex digest of the pas
   filesystem is **ephemeral**: history survives reruns/restarts but a **redeploy resets it** —
   download the CSVs before redeploying, or point the optional `USAGE_DB` secret at a
   persistent path.
+- **Stuck?** Open the app with `?setup=1` at the end of the URL: a masked, password-free
+  health check on the sign-in screen shows what actually loaded from Secrets and flags
+  formatting mistakes.
 
 ## Run locally (optional)
 ```
