@@ -184,6 +184,46 @@ def test_log_truncates_and_never_raises():
         os.environ["USAGE_DB"] = old
 
 
+
+# ── the login-screen setup check (masked, password-free) ──────────────────────
+def test_mask_id():
+    assert app._mask_id("rohit") == "r\u2022\u2022\u2022t"
+    assert app._mask_id("ab") == "ab"                       # too short to mask — kept
+    m = app._mask_id("priya@gmail.com")
+    assert m.startswith("p") and m.endswith(".com") and "\u2022" in m
+    assert "riya" not in m and "gmai" not in m              # the middle is hidden
+
+
+def test_setup_rows_health_report():
+    import hashlib
+    top = {"AWS_REGION": "us-east-1", "admins": ["rohit"], "users": {},
+           "stray@user.com": "oops-above-users-line"}
+    users = {"rohit": "pw123", "numpass": 987654,
+             "hash": hashlib.sha256(b"x").hexdigest(),
+             "broken": {"unquoted": {"email": "pw"}}}
+    rows = app._setup_rows(top, users, ["rohit", "ghost"])
+    text = " | ".join(m for _, m in rows)
+    warns = [m for lvl, m in rows if lvl == "warn"]
+    # healthy accounts described with password SHAPE, never the value
+    assert app._mask_id("rohit") in text and "text, 5 characters" in text
+    assert "pw123" not in text and "987654" not in text
+    assert "sha256 hash" in text
+    # broken (unquoted-email) entry flagged
+    assert any("missing its quotes" in m for m in warns)
+    # account line pasted above [users] flagged
+    assert any("ABOVE the `[users]` line" in m for m in warns)
+    # admin with no matching account flagged; existing admin not flagged
+    ghost = app._mask_id("ghost")
+    assert any(ghost in m and "no matching account" in m for m in warns)
+    assert not any("no matching account" in m and app._mask_id("rohit") in m for m in warns)
+
+
+def test_setup_rows_empty_users():
+    rows = app._setup_rows({}, {}, [])
+    assert any("No **[users]** table" in m for _, m in rows)
+    assert any("No **admins** list" in m for _, m in rows)
+
+
 def _main():
     fails = 0
     for name, fn in sorted(globals().items()):

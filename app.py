@@ -1030,11 +1030,41 @@ blockquote.lc-auth-quote.unverified {
   box-shadow: 0 12px 30px rgba(79,91,213,.42) !important;
 }
 .lc-auth-fail {
-  font-size: 12.5px; font-weight: 600; color: var(--red);
+  display: block;
+  font-size: 13px; font-weight: 400; color: var(--red);
   background: var(--red-bg); border: 1px solid var(--red-b);
-  border-left-width: 3px; border-radius: 8px;
-  padding: 8px 12px; margin-top: 10px;
+  border-left: 3px solid var(--red);
+  border-radius: 10px; line-height: 1.5;
+  padding: 11px 14px 12px; margin: 2px 0 10px;
   animation: fadeIn .25s ease both;
+}
+.lc-auth-fail-title {
+  display: block; font-size: 12px; font-weight: 800;
+  letter-spacing: .06em; text-transform: uppercase;
+  margin-bottom: 3px;
+}
+.lc-auth-fail-hint {
+  display: block; font-size: 11.5px; color: var(--amber);
+  margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--red-b);
+}
+[class*="st-key-setup_card"] {
+  background: var(--white);
+  border: 1px solid var(--indigo-border);
+  border-left: 3px solid var(--indigo-2);
+  border-radius: 14px;
+  padding: 18px 20px 14px;
+  margin-top: 14px;
+  max-width: 560px;
+  box-shadow: var(--s1);
+  animation: fadeUp .35s var(--ease) both;
+}
+[class*="st-key-setup_card"] p {
+  font-size: 13px !important; line-height: 1.6 !important;
+  color: var(--ink-2) !important; margin-bottom: .35rem !important;
+}
+.lc-setup-note {
+  font-size: 11px; font-style: italic; color: var(--slate-3);
+  margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--slate-5);
 }
 .lc-account {
   display: inline-flex; align-items: center; gap: 9px;
@@ -1436,6 +1466,61 @@ def _password_ok(stored, given) -> bool:
 
 def _current_user() -> str:
     return st.session_state.get("auth_user") or "anonymous"
+
+
+def _mask_id(s: str) -> str:
+    """'rohit' -> 'r•••t', 'priya@gmail.com' -> 'p•••a@g•••l.com' — recognisable to the
+    admin who created the account, useless to a stranger."""
+    def m(part):
+        return part if len(part) <= 2 else part[0] + "•" * (len(part) - 2) + part[-1]
+    s = str(s)
+    if "@" in s:
+        local, _, dom = s.partition("@")
+        head, _, tld = dom.rpartition(".")
+        return f"{m(local)}@{m(head)}.{tld}" if head else f"{m(local)}@{m(dom)}"
+    return m(s)
+
+
+# Top-level secrets keys that belong there — anything else scalar at top level is almost
+# always an account line someone pasted ABOVE the [users] header.
+_KNOWN_TOP_KEYS = {"users", "admins", "USAGE_DB",
+                   "AWS_BEARER_TOKEN_BEDROCK", "AWS_REGION", "BEDROCK_MODEL_ID"}
+
+
+def _setup_rows(top: dict, users_raw: dict, admins: list) -> list[tuple[str, str]]:
+    """Pure setup-health report over the secrets: [(level, message)] with level ok/warn.
+    Shows masked identifiers and password SHAPE (never the value) so the admin can see,
+    from the login screen itself, why an account isn't working."""
+    rows = []
+    valid = {k: v for k, v in users_raw.items() if isinstance(v, (str, int, float, bool))}
+    if not users_raw:
+        rows.append(("warn", "No **[users]** table found — sign-in is disabled."))
+    for k, v in users_raw.items():
+        if isinstance(v, (dict,)) or (hasattr(v, "items") and not isinstance(v, str)):
+            rows.append(("warn", f"Entry **{_mask_id(k)}…** is broken — this happens when an "
+                                 f"email key is missing its quotes. Write it as "
+                                 f'`"their@email.com" = "password"`.'))
+        elif isinstance(v, (list, tuple)):
+            rows.append(("warn", f"Entry **{_mask_id(k)}** has a list as its password — "
+                                 f"check the line's formatting."))
+        else:
+            pw = str(v)
+            shape = ("sha256 hash" if re.fullmatch(r"[0-9a-fA-F]{64}", pw.strip())
+                     else f"number ({len(pw)} digits)" if not isinstance(v, str)
+                     else f"text, {len(_norm_cred(pw))} characters")
+            rows.append(("ok", f"Account **{_mask_id(k)}** — password: {shape}."))
+    for k, v in top.items():
+        if k not in _KNOWN_TOP_KEYS and isinstance(v, (str, int, float, bool)):
+            rows.append(("warn", f"**{_mask_id(k)}** sits ABOVE the `[users]` line, so it is "
+                                 f"NOT an account — move that line below `[users]`."))
+    for a in admins:
+        if _resolve_user(str(a), valid) is None:
+            rows.append(("warn", f"Admin **{_mask_id(a)}** has no matching account in "
+                                 f"[users] — the usage panel is unreachable for them."))
+    if not admins:
+        rows.append(("warn", "No **admins** list — nobody can open the usage panel. Add "
+                             "`admins = [\"yourname\"]` ABOVE the `[users]` line."))
+    return rows
 
 
 _IST = ZoneInfo("Asia/Kolkata")
@@ -2731,9 +2816,7 @@ def _do_login():
     else:
         # One combined message on screen (don't tell a stranger which half was wrong) —
         # but log WHICH half failed so the admin can diagnose from the usage panel.
-        st.session_state.auth_error = (
-            "Wrong username/email or password — try again. Passwords are case-sensitive; "
-            "check Caps Lock and don't include quotes or spaces around it.")
+        st.session_state.auth_error = "The username/email or password doesn't match."
         usage.log(typed or "(blank)", "login_failed",
                   "unknown user" if u is None else f"wrong password for '{u}'")
 
@@ -2904,9 +2987,38 @@ if _auth_users() and not st.session_state.auth_user:
                           autocomplete="current-password", placeholder="••••••••")
             if st.session_state.auth_error:      # inside the form so it stays card-width
                 st.markdown(
-                    f'<div class="lc-auth-fail">⚠ {_esc(st.session_state.auth_error)}</div>',
+                    f'<div class="lc-auth-fail"><span class="lc-auth-fail-title">'
+                    f'⚠ Couldn\'t sign you in</span>'
+                    f'{_esc(st.session_state.auth_error)}'
+                    f'<span class="lc-auth-fail-hint">Passwords are case-sensitive — type it '
+                    f'fresh, with no quotes or spaces around it.</span></div>',
                     unsafe_allow_html=True)
             st.form_submit_button("Sign in →", type="primary", on_click=_do_login)
+    # ?setup=1 — a masked, password-free health check of the [users] secrets, readable from
+    # the login screen itself: which accounts actually loaded, and what's malformed. For the
+    # admin locked out by a secrets typo — masked identifiers only, nothing a stranger can use.
+    try:
+        _show_setup = bool(st.query_params.get("setup"))
+    except Exception:
+        _show_setup = False
+    if _show_setup:
+        try:
+            _top = {k: st.secrets[k] for k in st.secrets}
+        except Exception:
+            _top = {}
+        try:
+            _raw_users = dict(st.secrets.get("users", {}))
+        except Exception:
+            _raw_users = {}
+        with st.container(key="setup_card"):
+            st.markdown('<div class="lc-intake-label">Setup check</div>',
+                        unsafe_allow_html=True)
+            for lvl, msg in _setup_rows(_top, _raw_users, _admins()):
+                icon = "✅" if lvl == "ok" else "⚠️"
+                st.markdown(f"{icon} {msg}")
+            st.markdown('<div class="lc-setup-note">Names are masked; passwords are never '
+                        'shown. Remove <code>?setup=1</code> from the address to hide this.</div>',
+                        unsafe_allow_html=True)
     st.stop()
 
 # Account row — who is signed in, how many questions they've asked, sign-out,
