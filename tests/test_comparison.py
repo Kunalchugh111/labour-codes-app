@@ -54,6 +54,26 @@ def test_generic_comparison_detection():
         assert not app._is_generic_comparison(q), q
 
 
+# ── routing: comparison layout only for the broad question or the button ──────
+def test_route_query():
+    # broad what-changed question: comparison IS the answer → overview
+    assert app._route_query("what has changed from the old laws?", False, True) == "overview"
+    assert app._route_query("what changed in the new labour codes compared to old laws",
+                            False, True) == "overview"
+    # topical question mentioning change words: normal answer format (the
+    # 'What changed from the old law?' button is offered beneath it instead)
+    assert app._route_query("how has gratuity changed from the old law", False, True) == "answer"
+    assert app._route_query("What changed for retrenchment from the old Industrial "
+                            "Disputes Act?", False, True) == "answer"
+    assert app._route_query("difference between lay-off and retrenchment", False, True) == "answer"
+    # the button click forces the topical comparison
+    assert app._route_query("how has gratuity changed from the old law", True, True) == "compare"
+    # plain questions: answer
+    assert app._route_query("When is gratuity payable?", False, True) == "answer"
+    # button without sources can't compare (no-provisions message path)
+    assert app._route_query("how has gratuity changed", True, False) == "answer"
+
+
 # ── every pinned overview provision must exist, on both sides ─────────────────
 def test_overview_topics_pinned_provisions_exist():
     for label, cid, new_lbls, old_map in app._OVERVIEW_TOPICS:
