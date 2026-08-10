@@ -2109,6 +2109,19 @@ def _is_generic_comparison(query: str) -> bool:
     return bool(toks) and all(t in _CMP_META_WORDS for t in toks)
 
 
+def _route_query(query: str, force_compare: bool, has_sources: bool) -> str:
+    """'overview' | 'compare' | 'answer'. The old↔new comparison layout renders in exactly
+    two cases: the BROAD what-changed question (a normal answer can't address it), or the
+    user clicking the 'What changed from the old law?' button. A topical question that
+    merely mentions change words ('how has gratuity changed…') gets the normal
+    answer-plus-reasoning format, with that button offered beneath it."""
+    if _is_comparison(query) and _is_generic_comparison(query):
+        return "overview"
+    if force_compare and has_sources:
+        return "compare"
+    return "answer"
+
+
 def _verify_quotes(data: dict) -> dict:
     """Guardrail: anchor each citation to the REAL provision in the corpus (show that text —
     guaranteed verbatim); otherwise verify the model's quote against the full statute, so a
@@ -3532,9 +3545,9 @@ if st.session_state.pending:
                         "ir": {**_ir,
                                "chunks": [c for c in _ir["chunks"] if c.get("num") not in _excl]}}
             user_msg   = build_prompt(raw_q, _rfp, applicability=_notes)
-            wants_cmp   = force_compare or _is_comparison(corrected_q)
-            generic_cmp = wants_cmp and _is_generic_comparison(corrected_q)
-            is_compare  = generic_cmp or (bool(sources) and wants_cmp)
+            _route      = _route_query(corrected_q, force_compare, bool(sources))
+            generic_cmp = _route == "overview"
+            is_compare  = generic_cmp or _route == "compare"
 
             cmp_prompt = None
             if generic_cmp:
