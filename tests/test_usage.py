@@ -224,6 +224,43 @@ def test_setup_rows_empty_users():
     assert any("No **admins** list" in m for _, m in rows)
 
 
+
+# ── access-code sign-in (the simple mode) ─────────────────────────────────────
+def test_parse_codes():
+    assert app._parse_codes("rohit-731, priya-410, vendor-527") == \
+        ["rohit-731", "priya-410", "vendor-527"]
+    # newlines / semicolons / extra spaces / duplicates / case all tolerated
+    assert app._parse_codes(" ROHIT-731 ;\npriya-410,, priya-410 ") == \
+        ["rohit-731", "priya-410"]
+    assert app._parse_codes(["Rohit-731", "priya-410"]) == ["rohit-731", "priya-410"]
+    assert app._parse_codes(None) == []
+    assert app._parse_codes("") == []
+
+
+def test_norm_code_forgiving():
+    assert app._norm_code("  ROHIT - 731 ") == "rohit-731"
+    assert app._norm_code("\u200brohit-731\ufeff") == "rohit-731"   # zero-width paste junk
+    assert app._norm_code("rohit\u00a0-\u00a0731") == "rohit-731"   # non-breaking spaces
+    assert app._norm_code("rohit-731") == "rohit-731"
+
+
+def test_setup_rows_codes():
+    rows = app._setup_rows_codes(["rohit-731", "priya-410"], ["rohit-731"], True)
+    text = " | ".join(m for _, m in rows)
+    assert "2 code(s) loaded" in text
+    assert app._mask_id("rohit-731") in text
+    assert "rohit-731" not in text.replace(app._mask_id("rohit-731"), "")  # masked only
+    assert "IGNORED" in text                       # [users] present but codes mode wins
+    rows = app._setup_rows_codes(["x-1"], [], False)
+    assert any(lvl == "warn" and "ADMIN_CODES" in m for lvl, m in rows)
+
+
+def test_is_admin_covers_both_systems():
+    # code-mode admin check is normalising and case-insensitive
+    import types
+    assert app._norm_code(" ROHIT-731 ") in app._parse_codes("rohit-731")
+
+
 def _main():
     fails = 0
     for name, fn in sorted(globals().items()):

@@ -1478,6 +1478,62 @@ def _current_user() -> str:
     return st.session_state.get("auth_user") or "anonymous"
 
 
+# ── Access-code sign-in (the simple mode) ────────────────────────────────────
+# One flat string secret instead of a TOML table — nothing to quote, no header
+# ordering, no username/password pair:
+#
+#   APP_ACCESS_CODES = "rohit-731, priya-410, vendor-527"
+#   ADMIN_CODES      = "rohit-731"
+#
+# Each person gets ONE code; the code is their identity in the usage report, so
+# name the codes after people. Anyone entering an ADMIN code also sees the usage
+# panel (admin codes sign in even if not repeated in APP_ACCESS_CODES). When
+# APP_ACCESS_CODES is set it takes over from the [users] table entirely.
+
+def _norm_code(s) -> str:
+    """Codes are matched forgivingly: paste-junk normalised, lowercased, inner
+    spaces removed — '  ROHIT - 731 ' matches 'rohit-731'."""
+    return re.sub(r"\s+", "", _norm_cred(s)).lower()
+
+
+def _parse_codes(raw) -> list[str]:
+    """A comma/space/newline-separated string (or a TOML list) → normalised codes."""
+    if raw is None:
+        return []
+    parts = list(raw) if isinstance(raw, (list, tuple)) else re.split(r"[,;\n\s]+", str(raw))
+    out = []
+    for p in parts:
+        c = _norm_code(p)
+        if c and c not in out:
+            out.append(c)
+    return out
+
+
+def _access_codes() -> list[str]:
+    try:
+        return _parse_codes(st.secrets.get("APP_ACCESS_CODES", None)
+                            or st.secrets.get("ACCESS_CODES", None))
+    except Exception:
+        return []
+
+
+def _admin_codes() -> list[str]:
+    try:
+        return _parse_codes(st.secrets.get("ADMIN_CODES", None)
+                            or st.secrets.get("ADMIN_CODE", None))
+    except Exception:
+        return []
+
+
+def _is_admin(user) -> bool:
+    """Admin under either system: the admins username list, or an admin code."""
+    if not user:
+        return False
+    if str(user) in _admins():
+        return True
+    return _norm_code(user) in _admin_codes()
+
+
 def _mask_id(s: str) -> str:
     """'rohit' -> 'r•••t', 'priya@gmail.com' -> 'p•••a@g•••l.com' — recognisable to the
     admin who created the account, useless to a stranger."""
@@ -1530,6 +1586,24 @@ def _setup_rows(top: dict, users_raw: dict, admins: list) -> list[tuple[str, str
     if not admins:
         rows.append(("warn", "No **admins** list — nobody can open the usage panel. Add "
                              "`admins = [\"yourname\"]` ABOVE the `[users]` line."))
+    return rows
+
+
+def _setup_rows_codes(codes: list, admin_codes: list, users_present: bool) -> list[tuple[str, str]]:
+    """Setup-health rows for access-code mode (pure, for tests)."""
+    rows = [("ok", f"Access-code sign-in is ON — {len(codes)} code(s) loaded: "
+                   + (", ".join(f"**{_mask_id(c)}**" for c in codes) or "—") + ".")]
+    if admin_codes:
+        rows.append(("ok", "Admin code(s): "
+                           + ", ".join(f"**{_mask_id(c)}**" for c in admin_codes)
+                           + " — these open the usage panel (they sign in even if not "
+                             "repeated in APP_ACCESS_CODES)."))
+    else:
+        rows.append(("warn", "No **ADMIN_CODES** set — nobody can open the usage panel. Add "
+                             '`ADMIN_CODES = "your-code"` to Secrets.'))
+    if users_present:
+        rows.append(("ok", "A `[users]` table also exists but is IGNORED while "
+                           "APP_ACCESS_CODES is set."))
     return rows
 
 
@@ -2831,6 +2905,19 @@ def _do_login():
                   "unknown user" if u is None else f"wrong password for '{u}'")
 
 
+def _do_code_login():
+    typed = st.session_state.get("login_code", "")
+    c = _norm_code(typed)
+    if c and (c in _access_codes() or c in _admin_codes()):
+        st.session_state.auth_user = c
+        st.session_state.auth_error = ""
+        st.session_state.login_code = ""
+        usage.log(c, "login")
+    else:
+        st.session_state.auth_error = "That access code isn't valid."
+        usage.log(c or "(blank)", "login_failed", "invalid access code")
+
+
 def _do_logout():
     u = st.session_state.get("auth_user")
     if u:
@@ -2978,32 +3065,55 @@ else:
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Sign-in gate — active only when a [users] table exists in secrets
+# Sign-in gate — access-code mode when APP_ACCESS_CODES is set; else the
+# [users] username/password table; no sign-in when neither is configured.
 # ─────────────────────────────────────────────────────────────────────────────
-if _auth_users() and not st.session_state.auth_user:
+_gate = "codes" if (_access_codes() or _admin_codes()) else \
+        "users" if _auth_users() else None
+if _gate and not st.session_state.auth_user:
     with st.container(key="login_card"):
-        st.markdown(
-            '<div class="lc-intake-label">Sign in</div>'
-            '<div class="lc-intake-head">Enter the username or email and password you were '
-            'given to use the assistant.</div>',
-            unsafe_allow_html=True)
-        # A FORM, not bare inputs: pressing Enter submits, and both values are committed
-        # atomically before the callback runs — bare inputs needed a blur before the click,
-        # so typing the password and clicking straight away could sign in with a stale value.
-        with st.form("login_form", clear_on_submit=False, border=False):
-            st.text_input("Username or email", key="login_user", autocomplete="username",
-                          placeholder="e.g. rohit — or you@company.com")
-            st.text_input("Password", key="login_pass", type="password",
-                          autocomplete="current-password", placeholder="••••••••")
-            if st.session_state.auth_error:      # inside the form so it stays card-width
-                st.markdown(
-                    f'<div class="lc-auth-fail"><span class="lc-auth-fail-title">'
-                    f'⚠ Couldn\'t sign you in</span>'
-                    f'{_esc(st.session_state.auth_error)}'
-                    f'<span class="lc-auth-fail-hint">Passwords are case-sensitive — type it '
-                    f'fresh, with no quotes or spaces around it.</span></div>',
-                    unsafe_allow_html=True)
-            st.form_submit_button("Sign in →", type="primary", on_click=_do_login)
+        if _gate == "codes":
+            st.markdown(
+                '<div class="lc-intake-label">Sign in</div>'
+                '<div class="lc-intake-head">Enter the access code you were given.</div>',
+                unsafe_allow_html=True)
+            with st.form("code_form", clear_on_submit=False, border=False):
+                st.text_input("Access code", key="login_code",
+                              placeholder="e.g. rohit-731")
+                if st.session_state.auth_error:
+                    st.markdown(
+                        f'<div class="lc-auth-fail"><span class="lc-auth-fail-title">'
+                        f'⚠ Couldn\'t sign you in</span>'
+                        f'{_esc(st.session_state.auth_error)}'
+                        f'<span class="lc-auth-fail-hint">Codes aren\'t case-sensitive and '
+                        f'spaces don\'t matter — just retype it as you received it.</span>'
+                        f'</div>',
+                        unsafe_allow_html=True)
+                st.form_submit_button("Sign in →", type="primary", on_click=_do_code_login)
+        else:
+            st.markdown(
+                '<div class="lc-intake-label">Sign in</div>'
+                '<div class="lc-intake-head">Enter the username or email and password you '
+                'were given to use the assistant.</div>',
+                unsafe_allow_html=True)
+            # A FORM, not bare inputs: pressing Enter submits, and both values are committed
+            # atomically before the callback runs — bare inputs needed a blur before the
+            # click, so typing the password and clicking straight away could sign in with a
+            # stale value.
+            with st.form("login_form", clear_on_submit=False, border=False):
+                st.text_input("Username or email", key="login_user", autocomplete="username",
+                              placeholder="e.g. rohit — or you@company.com")
+                st.text_input("Password", key="login_pass", type="password",
+                              autocomplete="current-password", placeholder="••••••••")
+                if st.session_state.auth_error:  # inside the form so it stays card-width
+                    st.markdown(
+                        f'<div class="lc-auth-fail"><span class="lc-auth-fail-title">'
+                        f'⚠ Couldn\'t sign you in</span>'
+                        f'{_esc(st.session_state.auth_error)}'
+                        f'<span class="lc-auth-fail-hint">Passwords are case-sensitive — '
+                        f'type it fresh, with no quotes or spaces around it.</span></div>',
+                        unsafe_allow_html=True)
+                st.form_submit_button("Sign in →", type="primary", on_click=_do_login)
     # ?setup=1 — a masked, password-free health check of the [users] secrets, readable from
     # the login screen itself: which accounts actually loaded, and what's malformed. For the
     # admin locked out by a secrets typo — masked identifiers only, nothing a stranger can use.
@@ -3022,8 +3132,10 @@ if _auth_users() and not st.session_state.auth_user:
             _raw_users = {}
         # One self-contained HTML block: Streamlit renders each st.markdown row at the full
         # column width, so rows inside a max-width container spilled past the card's edge.
+        _rows = (_setup_rows_codes(_access_codes(), _admin_codes(), bool(_raw_users))
+                 if _gate == "codes" else _setup_rows(_top, _raw_users, _admins()))
         _rows_html = []
-        for lvl, msg in _setup_rows(_top, _raw_users, _admins()):
+        for lvl, msg in _rows:
             h = _esc(msg)
             h = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", h)
             h = re.sub(r"`([^`]+)`", r"<code>\1</code>", h)
@@ -3050,7 +3162,7 @@ if st.session_state.auth_user:
     with _c2:
         with st.container(key="logout_wrap"):
             st.button("Sign out", key="logout_btn", on_click=_do_logout)
-    if _user in _admins():
+    if _is_admin(_user):
         with st.expander("📊 Usage & activity (admin)", expanded=False):
             import pandas as _pd
             _rows = usage.stats()
