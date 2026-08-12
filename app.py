@@ -2618,12 +2618,6 @@ def _src_row_html(sources, no_provision):
 
 DISCLAIMER = ("⚖️ Informational only — not legal advice. "
               "Consult a qualified advisor for specific situations.")
-_VERDICT = {
-    "compliant":     ("✔", "Compliant"),
-    "non-compliant": ("✖", "Non-Compliant"),
-    "partial":       ("⚠", "Partially Compliant"),
-}
-
 def _esc(x) -> str:
     return html.escape(str(x if x is not None else ""))
 
@@ -2742,12 +2736,15 @@ _ISSUE_STATUS = {
     "info":      ("›", "info"),
 }
 
-def _render_analysis(analysis: list):
+def _render_analysis(analysis: list, neutral: bool = False):
     """Render the dissection: one card per legal issue — status chip, the issue, the reasoning
-    (law applied to the manager's facts), and the governing provision."""
+    (law applied to the manager's facts), and the governing provision. With `neutral`, every
+    chip renders in the plain info style — used for compliance answers, where the app no
+    longer stamps ok/violation judgements (see render_answer)."""
     st.markdown('<div class="lc-section-label">Analysis</div>', unsafe_allow_html=True)
     for a in analysis:
-        icon, cls = _ISSUE_STATUS.get(str(a.get("status", "info")).lower(), _ISSUE_STATUS["info"])
+        icon, cls = (_ISSUE_STATUS["info"] if neutral else
+                     _ISSUE_STATUS.get(str(a.get("status", "info")).lower(), _ISSUE_STATUS["info"]))
         issue   = _esc(str(a.get("issue", "")).strip() or "Issue")
         finding = _esc(str(a.get("finding", "")).strip())
         cite    = str(a.get("citation", "")).strip()
@@ -2800,10 +2797,15 @@ def render_answer(data: dict):
     analysis = [a for a in (data.get("analysis") or []) if isinstance(a, dict)
                 and (str(a.get("issue", "")).strip() or str(a.get("finding", "")).strip())]
 
-    # 0 — Direct answer FIRST (info questions): a plain-English one-liner with the governing
-    # section right under it, so a basic question gets its answer up top, before the legalese.
+    # 0 — Direct answer FIRST: a plain-English one-liner with the governing section right
+    # under it. Compliance answers no longer render the ✔/✖ Compliant/Non-Compliant verdict
+    # banner (a mis-judged stamp is worse than none on a legal tool) — the verdict SUMMARY,
+    # already reconciled against the worst issue, is shown as the Answer instead, and the
+    # reader weighs the reasoning below.
     direct = str(data.get("direct_answer", "")).strip()
-    if not is_comp and direct:
+    if is_comp and not direct:
+        direct = str(verdict.get("summary") or "").strip()
+    if direct:
         lead_cite = next((str(a.get("citation", "")).strip()
                           for a in analysis if str(a.get("citation", "")).strip()), "")
         cite_html = (f'<div class="lc-answer-cite">{_esc(_clean_citation(lead_cite))}</div>'
@@ -2818,33 +2820,16 @@ def render_answer(data: dict):
     if restate:
         st.markdown(f'<div class="lc-restate">{_esc(restate)}</div>', unsafe_allow_html=True)
 
-    # 1 — Verdict card (compliance) or lead paragraph (info, only when there's no analysis)
-    status   = (verdict.get("status") or "").strip().lower()
-    if is_comp and status in _VERDICT:
-        icon, label = _VERDICT[status]
-        st.markdown(
-            f'<div class="lc-verdict {status}">'
-            f'<span class="lc-verdict-icon">{icon}</span>'
-            f'<div class="lc-verdict-meta">'
-            f'<div class="lc-verdict-title">{label}</div>'
-            f'<div class="lc-verdict-text">{_esc(verdict.get("summary", ""))}</div>'
-            f'</div></div>',
-            unsafe_allow_html=True,
-        )
-    elif not analysis and str(data.get("answer", "")).strip():
+    # 1 — Lead paragraph (legacy info shape: an `answer` field with no analysis)
+    if not direct and not analysis and str(data.get("answer", "")).strip():
         st.markdown(f'<div class="lc-lead">{_esc(data["answer"])}</div>',
                     unsafe_allow_html=True)
 
-    # 2 — Analysis: the dissection (issue → governing provision → application → per-issue status).
-    # For a compliance verdict the headline is the verdict card, so the issue-by-issue reasoning is
-    # drill-down — collapse it. For an info lookup the findings ARE the substance — keep them open.
+    # 2 — Analysis: the dissection (issue → governing provision → application), always open —
+    # the sections and reasoning ARE the substance. Compliance issues render with NEUTRAL
+    # chips: no per-issue ok/violation stamps either.
     if analysis:
-        if is_comp:
-            n = len(analysis)
-            with st.expander(f"Detailed reasoning · {n} point{'s' if n != 1 else ''}", expanded=False):
-                _render_analysis(analysis)
-        else:
-            _render_analysis(analysis)
+        _render_analysis(analysis, neutral=is_comp)
     else:
         # Backward-compat: older replies (and history) use requirements / key_points bullets
         points = (data.get("requirements") if is_comp else data.get("key_points")) or []
