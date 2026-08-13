@@ -101,11 +101,27 @@ priya = "d74ff0ee8da3b98065b0..."         # …or a sha256 hex digest of the pas
   open directly in Excel.
 - The log is a local SQLite file (`usage.db`, gitignored). On Streamlit Community Cloud the
   filesystem is **ephemeral**: history survives reruns/restarts but a **redeploy resets it** —
-  download the CSVs before redeploying, or point the optional `USAGE_DB` secret at a
-  persistent path.
+  unless you enable the GitHub backup below.
 - **Stuck?** Open the app with `?setup=1` at the end of the URL: a masked, password-free
   health check on the sign-in screen shows what actually loaded from Secrets and flags
   formatting mistakes.
+
+### Keep history across app updates (recommended)
+Add one more secret and the usage log survives every redeploy — after each event the app
+mirrors the full log to a `usage-log` side branch of this repo (never the deploy branch, so
+mirror commits can't trigger redeploys), and re-imports it on startup:
+
+```
+GITHUB_TOKEN = "github_pat_…"
+# optional — defaults to this repo:
+# USAGE_REPO = "yourname/labour-codes-app"
+```
+
+To create the token: GitHub → **Settings → Developer settings → Fine-grained tokens →
+Generate new token** → Repository access: **only this repo** → Permissions → Repository →
+**Contents: Read and write** → Generate, and paste it as `GITHUB_TOKEN`. The admin usage
+panel shows "☁️ History is backed up to GitHub" once it's active. (Best-effort mirroring:
+if two app instances write at once the last writer wins.)
 
 ## Run locally (optional)
 ```

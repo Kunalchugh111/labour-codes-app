@@ -1405,6 +1405,27 @@ except Exception:
     pass
 
 
+@st.cache_resource
+def _init_usage_sync() -> str:
+    """Once per app process: if a GITHUB_TOKEN secret exists, mirror the usage log to a
+    side branch of the app repo and pull whatever history the mirror already holds — so
+    a redeploy no longer erases who logged in and what they asked."""
+    try:
+        tok = str(st.secrets.get("GITHUB_TOKEN", "") or "").strip()
+        if not tok:
+            return "off"
+        repo = (str(st.secrets.get("USAGE_REPO", "") or "").strip()
+                or "Kunalchugh111/labour-codes-app")
+        usage.configure_sync(tok, repo)
+        n = usage.restore_from_remote()
+        return f"on, {n} event(s) restored"
+    except Exception:
+        return "error"
+
+
+_USAGE_SYNC_STATE = _init_usage_sync()
+
+
 def _auth_users() -> dict:
     """The [users] table, keeping every SCALAR-valued entry. A numeric password typed
     without quotes ('rohit = 123456') parses as a TOML integer — it must still work, so
@@ -3163,6 +3184,11 @@ if st.session_state.auth_user:
     if _is_admin(_user):
         with st.expander("📊 Usage & activity (admin)", expanded=False):
             import pandas as _pd
+            if usage.sync_enabled():
+                st.caption("☁️ History is backed up to GitHub — it survives app updates.")
+            else:
+                st.caption("⚠️ History resets when the app is updated — add a GITHUB_TOKEN "
+                           "secret to keep it permanently (see README).")
             _rows = usage.stats()
             if _rows:
                 st.markdown('<div class="lc-section-label">Per user</div>',
