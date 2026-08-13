@@ -298,6 +298,18 @@ def test_import_rows_ignores_garbage():
                                {"ts": 0, "user": "x", "event": "e"}]) == 0
 
 
+
+# ── model text fields: JSON null must never render as the word "None" ─────────
+def test_clean_field():
+    assert app._clean_field(None) == ""
+    assert app._clean_field("None") == ""
+    assert app._clean_field(" null ") == ""
+    assert app._clean_field("N/A") == ""
+    assert app._clean_field("Notice is required.") == "Notice is required."
+    # words containing 'none' are NOT stripped
+    assert app._clean_field("Nonetheless, notice is required.") != ""
+
+
 def _main():
     fails = 0
     for name, fn in sorted(globals().items()):

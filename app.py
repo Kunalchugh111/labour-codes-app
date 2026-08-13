@@ -2642,6 +2642,13 @@ DISCLAIMER = ("⚖️ Informational only — not legal advice. "
 def _esc(x) -> str:
     return html.escape(str(x if x is not None else ""))
 
+
+def _clean_field(v) -> str:
+    """A model text field as displayable text: JSON null (or the model literally writing
+    'None'/'null'/'N/A') becomes '' — the Answer card was rendering the word 'None'."""
+    s = str(v if v is not None else "").strip()
+    return "" if s.lower() in ("none", "null", "n/a", "na", "-", "—") else s
+
 def _esc_ml(x) -> str:
     # Statute text carries PDF line-wrap newlines (~one every 76 chars, mid-sentence). A hard <br>
     # per line breaks sentences and renders ragged/"vertical" in narrow containers, so reflow:
@@ -2823,9 +2830,14 @@ def render_answer(data: dict):
     # banner (a mis-judged stamp is worse than none on a legal tool) — the verdict SUMMARY,
     # already reconciled against the worst issue, is shown as the Answer instead, and the
     # reader weighs the reasoning below.
-    direct = str(data.get("direct_answer", "")).strip()
+    direct = _clean_field(data.get("direct_answer"))
     if is_comp and not direct:
-        direct = str(verdict.get("summary") or "").strip()
+        direct = _clean_field(verdict.get("summary"))
+    if is_comp and not direct and analysis:
+        # Nothing usable from the model's summary — never show a blank (or 'None') Answer:
+        # point the reader at the reasoning, which is the substance anyway.
+        direct = ("See the analysis below — each point applies the law to your situation, "
+                  "with the governing Section cited.")
     if direct:
         lead_cite = next((str(a.get("citation", "")).strip()
                           for a in analysis if str(a.get("citation", "")).strip()), "")
@@ -2837,13 +2849,14 @@ def render_answer(data: dict):
             unsafe_allow_html=True)
 
     # 0b — Restatement (shows the situation was understood)
-    restate = str(data.get("restatement", "")).strip()
+    restate = _clean_field(data.get("restatement"))
     if restate:
         st.markdown(f'<div class="lc-restate">{_esc(restate)}</div>', unsafe_allow_html=True)
 
     # 1 — Lead paragraph (legacy info shape: an `answer` field with no analysis)
-    if not direct and not analysis and str(data.get("answer", "")).strip():
-        st.markdown(f'<div class="lc-lead">{_esc(data["answer"])}</div>',
+    _lead = _clean_field(data.get("answer"))
+    if not direct and not analysis and _lead:
+        st.markdown(f'<div class="lc-lead">{_esc(_lead)}</div>',
                     unsafe_allow_html=True)
 
     # 2 — Analysis: the dissection (issue → governing provision → application), always open —
