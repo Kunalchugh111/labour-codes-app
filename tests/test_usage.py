@@ -261,6 +261,43 @@ def test_is_admin_covers_both_systems():
     assert app._norm_code(" ROHIT-731 ") in app._parse_codes("rohit-731")
 
 
+
+# ── GitHub-mirror persistence (offline: the pure merge/export halves) ─────────
+def test_sync_disabled_is_inert():
+    usage.configure_sync("", "")                  # no token → every sync call no-ops
+    assert not usage.sync_enabled()
+    assert usage.restore_from_remote() == 0
+    assert usage.push_to_remote() is False
+
+
+def test_export_import_round_trip():
+    import json
+    _reset_db()
+    usage.configure_sync("", "")
+    usage.log("rohit-731", "login")
+    usage.log("rohit-731", "question", "when is gratuity payable?")
+    exported = usage._export_jsonl()
+    rows = [json.loads(l) for l in exported.splitlines() if l.strip()]
+    assert len(rows) == 2 and rows[1]["detail"] == "when is gratuity payable?"
+    # re-importing what we already have adds nothing (dedupe by exact tuple)
+    assert usage._import_rows(rows) == 0
+    # a genuinely new mirrored event IS imported — this is the redeploy-restore path
+    rows.append({"ts": rows[0]["ts"] - 86400, "user": "priya-410",
+                 "event": "question", "detail": "from before the redeploy"})
+    assert usage._import_rows(rows) == 1
+    assert usage.question_count("priya-410") == 1
+    # and the restored event flows into the CSV report
+    _, activity = app._usage_csvs()
+    assert "from before the redeploy" in activity
+
+
+def test_import_rows_ignores_garbage():
+    _reset_db()
+    assert usage._import_rows([]) == 0
+    assert usage._import_rows([{"nonsense": True}, {"ts": "not-a-number"},
+                               {"ts": 0, "user": "x", "event": "e"}]) == 0
+
+
 def _main():
     fails = 0
     for name, fn in sorted(globals().items()):

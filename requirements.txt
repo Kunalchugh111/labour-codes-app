@@ -7,3 +7,7 @@ pymupdf==1.27.2.3
 # startup embeddings-load and Bedrock paths. Ranges include the verified-working numpy 2.4.6.
 boto3>=1.34,<2
 numpy>=1.26,<3
+# pyarrow 25 (libarrow.so.2500) SEGFAULTS streamlit 1.40.2's dataframe serialization — the
+# whole app process dies the first time an st.dataframe renders (the admin usage panel).
+# Pin to the major family contemporary with the pinned streamlit.
+pyarrow>=14,<19
